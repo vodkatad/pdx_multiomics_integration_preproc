@@ -1,7 +1,21 @@
-import subprocess
-import re
 import numpy as np
 import pandas as pd
-import warnings
 
 configfile: './config'
+datadir = config["PRJ_ROOT"] + config["DATA_DIR"]
+srcdir = config["SRC"]
+
+rule trainTest_split:
+    input:
+        ids = datadir+"/mapping_sanger_ID_genealogy_long.tsv",
+        drug = datadir + "/drug_response/Treatments_Eugy_Ele_fix0cetuxi_201005.tsv"
+    output:
+        train = "Cetuximab_3w_cat_train.tsv",
+        test = "Cetuximab_3w_cat_test.tsv"
+    params:
+        testSize = .3,
+        target_col = "Cetuximab Standard 3wks",
+        class_labels = ["OR", "SD", "PD"],
+        class_bins = [np.NINF, -50, 35, np.Infinity]
+    script:
+        srcdir+"/1_PDx_drug_response_preTrainTest.py"
