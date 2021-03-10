@@ -10,6 +10,7 @@ rule trainTest_split:
         ids = datadir+"/mapping_sanger_ID_genealogy_long.tsv",
         drug = datadir + "/drug_response/Treatments_Eugy_Ele_fix0cetuxi_201005.tsv"
     output:
+        response_tab = "DrugResponse_LMXfirslevel_trainTest.tsv",
         train = "Cetuximab_3w_cat_train.tsv",
         test = "Cetuximab_3w_cat_test.tsv"
     params:
@@ -19,3 +20,20 @@ rule trainTest_split:
         class_bins = [np.NINF, -50, 35, np.Infinity]
     script:
         srcdir+"/1_PDx_drug_response_preTrainTest.py"
+
+rule CN_FeatClean:
+    input:
+        response = rules.trainTest_split.output.response_tab,
+        cnv = datadir + "/CNA_annotation/our_cn_genes2_CNVkitREDO_25012021.tsv",
+        targeted = datadir + "/targeted_intogen_common_geneset.tsv",
+    output:
+        Xtrain = "PDx_CNV_FeatSelect_Xtrain.tsv",
+        Xtest = "PDx_CNV_FeatSelect_X_test.tsv",
+        loadings_fig = "PDx_CNV_FeatSelect_loadings_barplot.pdf"
+    params:
+        colinear_trsh = .7,
+        target_col = "Cetuximab_Standard_3wks_cat"
+    log:
+        "PDx_CNV_FeatSelect_singleOmic_perf.log"
+    script:
+        srcdir+"/2_PDx_CN_GeneWise_CNVkitREDO_MultiFeatSel.py"
