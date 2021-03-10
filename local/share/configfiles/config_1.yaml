@@ -1,0 +1,4 @@
+BIOINFO_ROOT : '/home/umberto.perron/snaketree'
+PRJ_ROOT : '/home/umberto.perron/snaketree/prj/PDx_OmicsIntegration'
+VERSION : '1'
+DATA_DIR : '/local/share/data'
