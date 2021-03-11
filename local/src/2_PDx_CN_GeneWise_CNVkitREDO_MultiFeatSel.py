@@ -25,52 +25,15 @@ sb.set_style("white", rc=custom_style)
 # No warnings about setting value on copy of slice
 pd.options.mode.chained_assignment = None
 
-
-def missing_values_table(df):
-    # Total missing values
-    mis_val = df.isnull().sum()
-
-    # Percentage of missing values
-    mis_val_percent = 100 * df.isnull().sum() / len(df)
-
-    # Make a table with the results
-    mis_val_table = pd.concat([mis_val, mis_val_percent], axis=1)
-
-    # Rename the columns
-    mis_val_table_ren_columns = mis_val_table.rename(
-        columns={0: 'Missing Values', 1: '% of Total Values'})
-
-    # Sort the table by percentage of missing descending
-    mis_val_table_ren_columns = mis_val_table_ren_columns[
-        mis_val_table_ren_columns.iloc[:, 1] != 0].sort_values(
-        '% of Total Values', ascending=False).round(1)
-
-    # Print some summary information
-    print("Your selected dataframe has " + str(df.shape[1]) + " columns.\n"
-          "There are " + str(mis_val_table_ren_columns.shape[0]) +
-          " columns that have missing values.")
-
-    # Return the dataframe with missing information
-    return mis_val_table_ren_columns
+logfile = snakemake.log[0]
 
 
-def remove_collinear_features(x, threshold):
+def remove_collinear_features(x, threshold, priority_features=[]):
     '''
-    Objective:
         Remove collinear features in a dataframe with a correlation coefficient
         greater than the threshold. Removing collinear features can help a model
         to generalize and improves the interpretability of the model.
-
-    Inputs: 
-        threshold: any features with correlations greater than this value are removed
-
-    Output: 
-        dataframe that contains only the non-highly-collinear features
     '''
-
-    # Dont want to remove correlations between Energy Star Score
-    #y = x['score']
-    #x = x.drop(columns = ['score'])
 
     # Calculate the correlation matrix
     corr_matrix = x.corr()
@@ -78,34 +41,41 @@ def remove_collinear_features(x, threshold):
     drop_cols = []
 
     # Iterate through the correlation matrix and compare correlations
+    log = []
+    log_cols = ["f1", "f2", "corr", "f1_priority", "f2_priority", "dropped"]
     for i in iters:
         for j in range(i):
             item = corr_matrix.iloc[j:(j+1), (i+1):(i+2)]
             col = item.columns
             row = item.index
-            val = abs(item.values)
-
+            val = abs(item.values)[0][0]
             # If correlation exceeds the threshold
             if val >= threshold:
-                # Print the correlated features and the correlation value
-                # print(col.values[0], "|", row.values[0], "|", round(val[0][0], 2))
-                drop_cols.append(col.values[0])
+                f1 = col.values[0]
+                f2 = row.values[0]
+                # if both features in priority set
+                if f1 in priority_features and f2 in priority_features:
+                    drop_cols.append(f1)
+                    log.append([f1, f2, val, True, True, f1])
+                else:
+                    f_todrop = [f for f in [f1, f2]
+                                if f not in priority_features][0]
+                    drop_cols.append(f1)
+                    log.append([f1, f2, val,
+                                f1 in priority_features,
+                                f2 in priority_features,
+                                f_todrop])
 
     # Drop one of each pair of correlated columns
     drops = set(drop_cols)
-
-    with open(snakemake.log[0], "w") as logfile:
-        logfile.write(f"dropped {drops}\n")
-
     x = x.drop(columns=drops)
-
+    pd.DataFrame(log, columns=log_cols).to_csv(logfile, sep="\t")
     return x
 
 
 # load sample id conversion table, drug response data
 drug_response_data = pd.read_csv(snakemake.input.response,
                                  sep="\t")
-# load drug response data
 ctx3w_cat = drug_response_data[["ircc_id", "Cetuximab_Standard_3wks_cat"]].\
     set_index("ircc_id")
 
@@ -167,23 +137,27 @@ features_in = pd.merge(ctx3w_cat, CNV_matrix,
 
 genes_tokeep = [g for g in features_in.columns if g in common_geneset]
 features_clean = features_in
+target_col = "Cetuximab_Standard_3wks_cat"
 features_col = np.array([c for c in features_clean.columns if c != target_col])
-# remove features with 0 variance
-features_clean = features_clean.loc[(features_clean.var(axis=1) == 0).index]
+features_clean = features_clean[features_col]
+
+# remove features with low variance
+var_trsh = features_clean.var(axis=0).\
+    describe().loc[snakemake.params.var_pctl]
+features_clean = features_clean[(features_clean.var(axis=0) > var_trsh).index]
+
 # remove colinear features
-features_clean = remove_collinear_features(features_clean[features_col],
-                                           snakemake.params.colinear_trsh)
-# add back genes in common geneset
-genes_toadd = [c for c in genes_tokeep if c not in features_clean.columns]
-features_clean = pd.concat([features_clean, features_in[genes_toadd]], axis=1)
+features_clean = remove_collinear_features(
+    features_clean, .7, priority_features=genes_tokeep)
 features_col = features_clean.columns
+
 # replace na w/t 0
 features_clean = features_clean.fillna(0)
 features_clean[target_col] = features_in[target_col]
-# drop instances w/t missing target
-features_clean = features_clean[~features_clean[target_col].isna(
-)].drop_duplicates()
 
+# drop instances w/t missing target
+features_clean = features_clean[~features_clean[target_col].isna()].\
+    drop_duplicates()
 
 TT_df = drug_response_data[drug_response_data.ircc_id.isin(features_clean.index)][
     ["ircc_id", "is_test"]]
