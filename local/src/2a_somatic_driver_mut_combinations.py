@@ -51,16 +51,16 @@ features_pre = drug_mut_df[drug_mut_df["Final_Driver_Annotation"] == True][
 features_in = pd.get_dummies(features_pre.Gene)
 features_in["ircc_id"] = features_pre.ircc_id
 features_in = features_in.groupby("ircc_id").sum()
+
 # add some known driver mutation combos for CRC
 features_in["KRAS-BRAF-NRAS_triple_neg"] = (features_in.KRAS + features_in.BRAF + features_in.NRAS).\
     replace({0: 1, 1: 0, 2: 0, 3: 0})
 features_in["KRAS-APC_double_pos"] = (features_in.KRAS + features_in.APC).\
     replace({1: 0, 2: 1})
-
 # add drug response as target
 df1 = features_pre[[target_col, "ircc_id"]
                    ].drop_duplicates().set_index("ircc_id")
-features_in = pd.concat([features_in, df1], axis=1).drop_duplicates()
+features_in = pd.concat([features_in, df1], axis=1)
 
 # clean features
 features_col = np.array([c for c in features_in.columns if c != target_col])
@@ -86,13 +86,6 @@ X_train = features_clean.loc[train_models, features_col]
 y_train = features_clean.loc[train_models, target_col]
 X_test = features_clean.loc[test_models, features_col]
 y_test = features_clean.loc[test_models, target_col]
-# standardise features
-X_train = pd.DataFrame(StandardScaler().fit_transform(X_train.values),
-                       columns=features_col,
-                       index=train_models)
-X_test = pd.DataFrame(StandardScaler().fit_transform(X_test.values),
-                      columns=features_col,
-                      index=test_models)
 # save to file
 X_train.to_csv(snakemake.output.Xtrain, sep="\t")
 X_test.to_csv(snakemake.output.Xtest, sep="\t")
