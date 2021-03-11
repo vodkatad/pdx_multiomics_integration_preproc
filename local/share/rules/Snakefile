@@ -5,6 +5,9 @@ configfile: './config'
 datadir = config["PRJ_ROOT"] + config["DATA_DIR"]
 srcdir = config["SRC"]
 
+# map different PDx model ids
+# merge drug response data, select target
+# split samples in train/test set
 rule trainTest_split:
     input:
         ids = datadir+"/mapping_sanger_ID_genealogy_long.tsv",
@@ -21,6 +24,9 @@ rule trainTest_split:
     script:
         srcdir+"/1_PDx_drug_response_preTrainTest.py"
 
+# copy number feature preprocessing
+# remove low variance features, colinear features
+# viz CN feature importance via linearSCV loadings
 rule CN_FeatClean:
     input:
         response = rules.trainTest_split.output.response_tab,
@@ -28,12 +34,69 @@ rule CN_FeatClean:
         targeted = datadir + "/targeted_intogen_common_geneset.tsv",
     output:
         Xtrain = "PDx_CNV_FeatSelect_Xtrain.tsv",
-        Xtest = "PDx_CNV_FeatSelect_X_test.tsv",
+        Xtest = "PDx_CNV_FeatSelect_Xtest.tsv",
         loadings_fig = "PDx_CNV_FeatSelect_loadings_barplot.pdf"
     params:
+        var_pctl = "25%",
         colinear_trsh = .7,
         target_col = "Cetuximab_Standard_3wks_cat"
     log:
-        "PDx_CNV_FeatSelect_singleOmic_perf.log"
+        "CN_FeatClean.log"
     script:
         srcdir+"/2_PDx_CN_GeneWise_CNVkitREDO_MultiFeatSel.py"
+
+# mutation data feature preprocessing
+# remove colinear features, 0 var features,
+# build mut combo features
+# viz mut feature importance via linearSCV loadings
+rule mut_FeatClean:
+    input:
+        response = rules.trainTest_split.output.response_tab,
+        mut = datadir+"/Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt"
+    output:
+        Xtrain = "PDx_mut_FeatSelect_Xtrain.tsv",
+        Xtest = "PDx_mut_FeatSelect_Xtest.tsv",
+        loadings_fig = "PDx_mut_FeatSelect_loadings_barplot.pdf"
+    params:
+        colinear_trsh = .7,
+        target_col = "Cetuximab_Standard_3wks_cat"
+    log: "mut_FeatClean.log"
+    script:
+        srcdir+"/2a_somatic_driver_mut_combinations.py"
+
+# mutation VAF features preprocessing
+# remove colinear features, 0 var features
+# viz mut VAF feature importance via linearSCV loadings
+rule mutVAF_FeatClean:
+    input:
+        response = rules.trainTest_split.output.response_tab,
+        mut = datadir+"/Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt"
+    output:
+        Xtrain = "PDx_mutVAF_FeatSelect_Xtrain.tsv",
+        Xtest = "PDx_mutVAF_FeatSelect_Xtest.tsv",
+        loadings_fig = "PDx_mutVAF_FeatSelect_loadings_barplot.pdf"
+    params:
+        colinear_trsh = .7,
+        target_col = "Cetuximab_Standard_3wks_cat"
+    log: "mutVAF_FeatClean.log"
+    script:
+        srcdir+"/2b_somatic_driver_mut_VAF.py"
+
+rule expr_FeatCleanSelect:
+    input:
+        response = rules.trainTest_split.output.response_tab,
+        expr = datadir+"/RNAseq/release_2/selected_matrix.tsv"
+    output:
+        Xtrain = "PDx_expr_FeatSelect_Xtrain.tsv",
+        Xtest = "PDx_expr_FeatSelect_Xtest.tsv",
+        boundary_fig = "PDx_expr_FeatSelect_boundary_scatterplot.pdf",
+        featSelect_model = "PDx_expr_FeatSelect_lSVC.pkl",
+        loadings_fig = "PDx_expr_FeatSelect_loadings_barplot.pdf"
+    params:
+        colinear_trsh = .7,
+        var_pctl = "25%",
+        target_col = "Cetuximab_Standard_3wks_cat"
+    log: "mutVAF_FeatClean.log"
+    threads: 8
+    script:
+        srcdir+"/2_PDx_DrugResponse_geneExpr_MultiFeatSelect.py"
