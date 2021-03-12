@@ -1,6 +1,8 @@
 import pandas as pd
+from numba import jit
 
 
+@numba.jit
 def remove_collinear_features(x, threshold,
                               priority_features=[],
                               logfile=None):

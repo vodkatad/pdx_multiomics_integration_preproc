@@ -4,6 +4,7 @@
 # Data manipulation
 import pandas as pd
 import numpy as np
+# viz
 import seaborn as sb
 import matplotlib.pyplot as plt
 
@@ -19,11 +20,13 @@ from sklearn.svm import LinearSVC, SVC
 # feature selection
 from sklearn.feature_selection import SelectFromModel
 # benchmark
-from sklearn.metrics import roc_curve, multilabel_confusion_matrix, auc, matthews_corrcoef, roc_auc_score, accuracy_score
+from sklearn.metrics import multilabel_confusion_matrix, accuracy_score
 # Hyperparameter tuning
-from sklearn.model_selection import RandomizedSearchCV, GridSearchCV
+from sklearn.model_selection import GridSearchCV
 
 import pickle
+from numba import jit
+
 from helpers import remove_collinear_features
 # Options for pandas
 # No warnings about setting value on copy of slice
@@ -76,6 +79,7 @@ input_matrix = input_matrix[features_col]
 var_trsh = input_matrix.var(axis=0).\
     describe().loc[snakemake.params.var_pctl]
 input_matrix = input_matrix[(input_matrix.var(axis=0) > var_trsh).index]
+
 # remove colinear features
 input_matrix = remove_collinear_features(
     input_matrix,
@@ -102,12 +106,10 @@ X_train = pd.DataFrame(StandardScaler().fit_transform(X_train.values),
 X_test = pd.DataFrame(StandardScaler().fit_transform(X_test.values),
                       columns=features_col,
                       index=X_test.index)
-
 X_train = X_train.values
 Y_train = y_train.values
 X_test = X_test.values
 Y_test = y_test.values
-
 
 # Expression and methylation data are too high-dimensional to integrate.
 # We need to perform feature selection for these two OMICs. I'm using SelectFromModel to select features based on importance.
@@ -135,19 +137,21 @@ pipeline = Pipeline(pipe_steps)
 # Set up grid search with 4-fold cross validation
 grid_cv = GridSearchCV(estimator=pipeline,
                        param_grid=hyperparameter_grid,
-                       cv=4,  n_iter=10,
+                       cv=4,  # n_iter=10,
                        scoring="accuracy",
                        n_jobs=-1, refit=True,
                        return_train_score=True)
 grid_cv.fit(X_train, y_train)
 
+# grid search params tuning results
 CVresult_df = pd.DataFrame(grid_cv.cv_results_)
 CVresult_df.sort_values("rank_test_score")[
     ["rank_test_score", "mean_train_score", "mean_test_score"]].head()
 
+grid_cv_test_score = grid_cv.score(X_test, y_test)
+
 y_classes = input_matrix[target_col].unique().tolist()
 Y_pred = grid_cv.predict(X_test)
-# print (Y_pred)
 multi_cm = multilabel_confusion_matrix(y_test, Y_pred, labels=y_classes)
 tn, fp, fn, tp = [i for i in sum(multi_cm).ravel()]
 accuracy = tp + tn / (tp + fp + fn + tn)
@@ -260,7 +264,7 @@ kernel = classifier_params["kernel"]
 gamma = classifier_params["gamma"]
 C = classifier_params["C"]
 accu = grid_cv_test_score
-st = f"SVC n_genes={n_genes}, k={kernel}; γ={gamma}; C={C}; accuracy={accu:.3f} on PDx vsd expression"
+st = f"linearSVC n_genes={n_genes}, k={kernel}; γ={gamma}; C={C}; accuracy={accu:.3f} on PDx vsd expression"
 st = fig.suptitle(st, y=.95, fontsize=18)
 fig.tight_layout
 fig.savefig(snakemake.output.boundary_fig,
