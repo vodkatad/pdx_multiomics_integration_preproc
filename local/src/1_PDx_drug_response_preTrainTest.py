@@ -53,11 +53,7 @@ drug_response_data[target_col_cat] = pd.cut(
 n_test = int(drug_response_data.ircc_id.nunique() * snakemake.params.testSize)
 test_models = drug_response_data.ircc_id.sample(n=n_test, random_state=13)
 drug_response_data["is_test"] = drug_response_data["ircc_id"].isin(test_models)
+drug_response_data.to_csv(snakemake.output.response_tab, sep="\t", index=None)
 
 test = drug_response_data[drug_response_data["is_test"] == True]
 train = drug_response_data[drug_response_data["is_test"] == False]
-
-test.set_index("ircc_id")["Cetuximab_Standard_3wks_cat"].\
-    to_csv(snakemake.output.test, sep="\t")
-train.set_index("ircc_id")["Cetuximab_Standard_3wks_cat"].\
-    to_csv(snakemake.output.train, sep="\t")
