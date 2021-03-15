@@ -141,4 +141,4 @@ fig.savefig(snakemake.output.loadings_fig,
             format='pdf',
             bbox_inches='tight',
             dpi=fig.dpi,
-            metadata={"Creator": "snakemake CN_FeatClean"})
+            metadata={"Creator": "snakemake mut_FeatClean"})
