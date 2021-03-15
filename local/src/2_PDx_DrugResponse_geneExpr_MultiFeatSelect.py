@@ -19,15 +19,15 @@ from sklearn.feature_selection import RFE
 from sklearn.svm import LinearSVC, SVC
 # feature selection
 from sklearn.feature_selection import SelectFromModel
+from sklearn.feature_selection import SelectKBest, f_classif
 # benchmark
-from sklearn.metrics import multilabel_confusion_matrix, accuracy_score
+from sklearn.metrics import multilabel_confusion_matrix, matthews_corrcoef, accuracy_score
 # Hyperparameter tuning
 from sklearn.model_selection import GridSearchCV
 
 import pickle
-from numba import jit
 
-from helpers import remove_collinear_features
+from helpers import remove_collinear_features_numba
 # Options for pandas
 # No warnings about setting value on copy of slice
 pd.options.mode.chained_assignment = None
@@ -74,20 +74,6 @@ input_matrix = merge_matrix
 input_matrix.index = input_matrix.index.values
 features_col = np.array([c for c in input_matrix.columns if c != target_col])
 
-# remove features with low variance
-input_matrix = input_matrix[features_col]
-var_trsh = input_matrix.var(axis=0).\
-    describe().loc[snakemake.params.var_pctl]
-input_matrix = input_matrix[(input_matrix.var(axis=0) > var_trsh).index]
-
-# remove colinear features
-input_matrix = remove_collinear_features(
-    input_matrix,
-    snakemake.params.colinear_trsh,
-    logfile=logfile)
-features_col = input_matrix.columns
-input_matrix[target_col] = merge_matrix[target_col]
-
 TT_df = drug_response_data[drug_response_data.ircc_id.isin(input_matrix.index)][
     ["ircc_id", "is_test"]]
 train_models = TT_df[TT_df.is_test == False].ircc_id.unique()
@@ -119,27 +105,34 @@ Y_test = y_test.values
 #     - tree-based feature selection
 #     - sequential feature selection
 
+# train the feature selector inside a pipeline that tries to maximise
+# classification accuracy on the training set
+N = len(features_col)
+Ks = [int(f) for f in [N/1000, N/500, N/200, N/100, N/50]]
 pipe_steps = [
+    ("ANOVAfilter", SelectKBest(f_classif)),
     ("lSVCselector", SelectFromModel(
-        LinearSVC(penalty="l1", dual=False))),  # feature selection
+        LinearSVC(penalty="l1", dual=False, max_iter=5000))),  # feature selection
     ("pca", PCA()),
-    ("SVCclassifier", SVC()),
+    ("SVCclassifier", SVC(max_iter=5000)),
 ]
 hyperparameter_grid = {
-    "lSVCselector__estimator__C": [0.1, 0.5, 0.05],
+    "ANOVAfilter__k": Ks,
+    "lSVCselector__estimator__C": [1, 0.1, 0.5, .05],
     "pca__n_components": [2],
     "SVCclassifier__kernel": ["linear"],
-    "SVCclassifier__C": [1, 0.1, 0.5, 0.01, 0.05, 0.01, 0.05, 10, 30, 40],
-    "SVCclassifier__gamma": ["auto", 1, 0.1, 0.5, 0.01, 0.05]
+    "SVCclassifier__C": [1, 0.1, 0.1, 10],
+    "SVCclassifier__gamma": ["auto", 1, 0.1, 0.5, 0.01]
 }
 pipeline = Pipeline(pipe_steps)
 
 # Set up grid search with 4-fold cross validation
 grid_cv = GridSearchCV(estimator=pipeline,
                        param_grid=hyperparameter_grid,
-                       cv=4,  # n_iter=10,
+                       cv=4,
                        scoring="accuracy",
-                       n_jobs=-1, refit=True,
+                       n_jobs=snakemake.threads,
+                       refit=True,
                        return_train_score=True)
 grid_cv.fit(X_train, y_train)
 
@@ -147,6 +140,7 @@ grid_cv.fit(X_train, y_train)
 CVresult_df = pd.DataFrame(grid_cv.cv_results_)
 CVresult_df.sort_values("rank_test_score")[
     ["rank_test_score", "mean_train_score", "mean_test_score"]].head()
+CVresult_df.to_csv(snakemake.log[0], sep="\t")
 
 grid_cv_test_score = grid_cv.score(X_test, y_test)
 
@@ -173,13 +167,17 @@ with open(snakemake.log[0], "a") as logfile:
 # rerun feature selection, pca
 X_test_df = pd.DataFrame(X_test,
                          columns=features_col)
-selector = grid_cv.best_estimator_[0]
-lsvc_selected = features_col[selector.get_support()]
+ANOVA_filter = grid_cv.best_estimator_[0]
+selector = grid_cv.best_estimator_[1]
+ANOVA_selected = features_col[ANOVA_filter.get_support()]
+lsvc_selected = ANOVA_selected[selector.get_support()]
+
 X_test_selected = X_test_df[lsvc_selected].values
+
 pca2 = PCA(n_components=2)
 X_test_selected_reduced = pca2.fit_transform(X_test_selected)
 
-classify = grid_cv.best_estimator_[2]
+classify = grid_cv.best_estimator_[3]
 
 
 def plot_contours(ax, clf, xx, yy, **params):
@@ -259,7 +257,7 @@ yl = plt.ylabel("PC_2", fontsize=14)
 
 # annotate w/t pipeline params
 n_genes = lsvc_selected.shape[0]
-classifier_params = grid_cv.best_estimator_[2].get_params()
+classifier_params = grid_cv.best_estimator_[3].get_params()
 kernel = classifier_params["kernel"]
 gamma = classifier_params["gamma"]
 C = classifier_params["C"]
@@ -273,16 +271,13 @@ fig.savefig(snakemake.output.boundary_fig,
             dpi=fig.dpi,
             metadata={"Creator": "expr_FeatCleanSelect"})
 
-
+# pickle pipeline
 model_filename = snakemake.output.featSelect_model
 with open(model_filename, 'wb') as f:
     pickle.dump(grid_cv.best_estimator_, f)
 
-# # TODO try  SequentialFeatureSelector as in
-# https://scikit-learn.org/stable/auto_examples/feature_selection/plot_select_from_model_diabetes.html#sphx-glr-auto-examples-feature-selection-plot-select-from-model-diabetes-py
-
-svm = grid_cv.best_estimator_[2]
-selector = grid_cv.best_estimator_[0]
+svm = grid_cv.best_estimator_[3]
+selector = grid_cv.best_estimator_[1]
 
 # get selected feature
 input_matrix = merge_matrix
@@ -294,7 +289,6 @@ train_models = TT_df[TT_df.is_test == False].ircc_id.unique()
 test_models = TT_df[TT_df.is_test == True].ircc_id.unique()
 
 features_col = np.array([c for c in input_matrix.columns if c != target_col])
-lsvc_selected = features_col[selector.get_support()]
 
 # slice selected features, save train test
 X_train = input_matrix.loc[train_models, lsvc_selected]
@@ -316,7 +310,7 @@ X_test.to_csv(snakemake.output.Xtest, sep="\t")
 # get the feature selector (linear SVC) coeff
 coeff_plot_df = pd.DataFrame(selector.estimator_.coef_.T,
                              columns=svm.classes_,
-                             index=features_col)
+                             index=ANOVA_selected)
 # keep only supported features
 coeff_plot_df["support"] = selector.get_support()
 coeff_plot_df = coeff_plot_df[coeff_plot_df["support"] == True][svm.classes_]

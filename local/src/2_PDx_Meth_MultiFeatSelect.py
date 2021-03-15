@@ -40,34 +40,6 @@ custom_style = {'axes.labelcolor': 'black',
                 'ytick.color': 'black'}
 sb.set_style("white", rc=custom_style)
 
-# read methylation M file in chunks, convert to to hd5
-# in_filename="data/methylation/m_values_Umberto.tsv"
-#master_filename = 'data/methylation/m_values_Umberto.hd5'
-#numerical_cols = pd.read_csv("data/methylation/columns.tsv", header=None)[0][1:].tolist()
-#chunksize = 10000
-#chunk_list = []
-#i = 0
-# for chunk in pd.read_csv(in_filename,
-#                sep="\t",
-#                iterator=True,
-#                chunksize=chunksize,
-#                names=["probe"] + numerical_cols,
-#                header=None,
-#                skiprows=1):
-#        # covert to np float
-#        chunk[numerical_cols] = chunk[numerical_cols].apply(pd.to_numeric,
-#                                                            errors='coerce',
-#                                                            downcast='float')
-#        chunk["probe"] = chunk["probe"].astype(str)
-#        vaex_df = vaex.from_pandas(chunk, copy_index=False)
-#        out_filename = f"data/methylation/m_values/m_values_{i}.hd5"
-#        vaex_df.export_hdf5(path=out_filename)
-#        i+=1
-#        chunk_list.append(out_filename)
-#        del chunk
-#master_df = vaex.open_many(chunk_list)
-# master_df.export_hdf5(path=master_filename)
-
 master_filename = snakemake.input.meth_m
 features_in = vaex.open(master_filename)
 nrows, ncols = features_in.shape
@@ -87,7 +59,7 @@ probe_stats = pd.concat([Msd, bDTpval], axis=1)
 # keep probes w/t binomial FDR < .05,
 # keep most variable probes
 sd_pctl = snakemake.params.sd_pctl
-M_sd_thrs = probe_stats.describe(percentiles=[sd_pctl[:-1]/100]).\
+M_sd_thrs = probe_stats.describe(percentiles=[float(sd_pctl[:-1])/100]).\
     loc[sd_pctl, "M_sd"]
 FDR = .05
 probes_tokeep = pd.Series(probe_stats[(
@@ -140,7 +112,7 @@ X_test = StandardScaler().fit_transform(X_test)
 # train the feature selector inside a pipeline that tries to maximise
 # classification accuracy on the training set
 N = len(features_col)
-Ks = [int(f) for f in [N/100, N/50, N/10, N/5]]
+Ks = [int(f) for f in [N/2000, N/1000, N/500, N/200, N/200]]
 pipe_steps = [
     ("ANOVAfilter", SelectKBest(f_classif)),
     ("lSVCselector", SelectFromModel(
@@ -175,13 +147,14 @@ grid_cv = GridSearchCV(estimator=pipeline,
                        scoring="accuracy",
                        n_jobs=-1, refit=True,
                        return_train_score=True)
+grid_cv.fit(X_train, y_train)
+grid_cv_test_score = grid_cv.score(X_test, y_test)
 
-
+# grid search params tuning results
 CVresult_df = pd.DataFrame(grid_cv.cv_results_)
 CVresult_df.sort_values("rank_test_score")[
     ["rank_test_score", "mean_train_score", "mean_test_score"]].head()
-
-grid_cv_test_score = grid_cv.score(X_test, y_test)
+CVresult_df.to_csv(snakemake.log[0], sep="\t")
 
 y_classes = input_matrix[target_col].unique().tolist()
 Y_pred = grid_cv.predict(X_test)
@@ -299,13 +272,13 @@ xl = plt.xlabel("PC_1", fontsize=14)
 yl = plt.ylabel("PC_2", fontsize=14)
 
 # annotate w/t pipeline params
-n_genes = lsvc_selected.shape[0]
-classifier_params = grid_cv.best_estimator_[2].get_params()
+n_probes = lsvc_selected.shape[0]
+classifier_params = grid_cv.best_estimator_[3].get_params()
 kernel = classifier_params["kernel"]
 gamma = classifier_params["gamma"]
 C = classifier_params["C"]
 accu = grid_cv_test_score
-st = f"SVC n_genes={n_genes}, k={kernel}; γ={gamma}; C={C}; accuracy={accu:.3f} on PDx meth M"
+st = f"linearSVC n_probes={n_probes}, k={kernel}; γ={gamma}; C={C}; accuracy={accu:.3f} on PDx vsd expression"
 st = fig.suptitle(st, y=.95, fontsize=18)
 
 fig.savefig(snakemake.output.boundary_fig,
