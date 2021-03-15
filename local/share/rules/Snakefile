@@ -82,6 +82,8 @@ rule mutVAF_FeatClean:
     script:
         srcdir+"/2b_somatic_driver_mut_VAF.py"
 
+# feature selection on variance stabilised expression data
+# ANOVA fscore filter + linearSVC l1
 rule expr_FeatCleanSelect:
     input:
         response = rules.trainTest_split.output.response_tab,
@@ -93,10 +95,70 @@ rule expr_FeatCleanSelect:
         featSelect_model = "PDx_expr_FeatSelect_lSVC.pkl",
         loadings_fig = "PDx_expr_FeatSelect_loadings_barplot.pdf"
     params:
-        colinear_trsh = .7,
-        var_pctl = "25%",
         target_col = "Cetuximab_Standard_3wks_cat"
-    log: "mutVAF_FeatClean.log"
+    log: "expr_FeatCleanSelect.log"
     threads: 8
     script:
         srcdir+"/2_PDx_DrugResponse_geneExpr_MultiFeatSelect.py"
+
+# convert methylation data to hd5 format
+rule meth_pre:
+    input: 
+        M_in = datadir + "/methylation/m_values_Umberto.tsv",
+        colfile = datadir + "/methylation/columns.tsv"
+    output:
+        M_out = protected("m_values.hd5")
+    run:
+        import vaex
+        numerical_cols = pd.read_csv(input.colfile,
+                                     header=None)[0][1:].tolist()
+        chunksize = 10000
+        chunk_list = []
+        i = 0
+        for chunk in pd.read_csv(input.M_in,
+                sep="\t",
+                iterator=True,
+                chunksize=chunksize,
+                names=["probe"] + numerical_cols,
+                header=None,
+                skiprows=1):
+            # covert to np float
+            chunk[numerical_cols] = chunk[numerical_cols].apply(pd.to_numeric,
+                                                                errors='coerce',
+                                                                downcast='float')
+            chunk["probe"] = chunk["probe"].astype(str)
+            # load to vaex
+            vaex_df = vaex.from_pandas(chunk, copy_index=False)
+            # save chunk as hd5
+            out_filename = f"m_values_{i}_tmp.hd5"
+            vaex_df.export_hdf5(path=out_filename)
+            i+=1
+            chunk_list.append(out_filename)
+            del chunk
+        # load all chunks into vaex
+        master_df = vaex.open_many(chunk_list)
+        master_df.export_hdf5(path=output.M_out)    
+        shell("rm m_values_*_tmp.hd5")
+
+# feature selection on methylation (B) data
+# ANOVA fscore filter + linearSVC l1
+rule meth_FeatCleanSelect:
+    input:
+        response = rules.trainTest_split.output.response_tab,
+        meth_m = ancient("m_values.hd5"),
+        meth_B_DTpval = datadir + "/methylation/beta_DT-pvalue_Xeno.tsv",
+        meth_m_sd = datadir + "/methylation/m_sdvalue.tsv"
+    output:
+        Xtrain = "PDx_meth_FeatSelect_Xtrain.tsv",
+        Xtest = "PDx_meth_FeatSelect_Xtest.tsv",
+        boundary_fig = "PDx_meth_FeatSelect_boundary_scatterplot.pdf",
+        featSelect_model = "PDx_meth_FeatSelect_lSVC.pkl",
+        loadings_fig = "PDx_meth_FeatSelect_loadings_barplot.pdf"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        binom_test_FDR = .05,
+        sd_pctl = "25%",
+    log: "meth_FeatCleanSelect.log"
+    threads: 8
+    script:
+        srcdir+"/2_PDx_Meth_MultiFeatSelect.py"
