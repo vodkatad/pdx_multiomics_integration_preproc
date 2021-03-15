@@ -13,9 +13,7 @@ rule trainTest_split:
         ids = datadir+"/mapping_sanger_ID_genealogy_long.tsv",
         drug = datadir + "/drug_response/Treatments_Eugy_Ele_fix0cetuxi_201005.tsv"
     output:
-        response_tab = "DrugResponse_LMXfirslevel_trainTest.tsv",
-        train = "Cetuximab_3w_cat_train.tsv",
-        test = "Cetuximab_3w_cat_test.tsv"
+        response_tab = "DrugResponse_LMXfirslevel_trainTest.tsv"
     params:
         testSize = .3,
         target_col = "Cetuximab Standard 3wks",
@@ -101,51 +99,12 @@ rule expr_FeatCleanSelect:
     script:
         srcdir+"/2_PDx_DrugResponse_geneExpr_MultiFeatSelect.py"
 
-# convert methylation data to hd5 format
-rule meth_pre:
-    input: 
-        M_in = datadir + "/methylation/m_values_Umberto.tsv",
-        colfile = datadir + "/methylation/columns.tsv"
-    output:
-        M_out = protected("m_values.hd5")
-    run:
-        import vaex
-        numerical_cols = pd.read_csv(input.colfile,
-                                     header=None)[0][1:].tolist()
-        chunksize = 10000
-        chunk_list = []
-        i = 0
-        for chunk in pd.read_csv(input.M_in,
-                sep="\t",
-                iterator=True,
-                chunksize=chunksize,
-                names=["probe"] + numerical_cols,
-                header=None,
-                skiprows=1):
-            # covert to np float
-            chunk[numerical_cols] = chunk[numerical_cols].apply(pd.to_numeric,
-                                                                errors='coerce',
-                                                                downcast='float')
-            chunk["probe"] = chunk["probe"].astype(str)
-            # load to vaex
-            vaex_df = vaex.from_pandas(chunk, copy_index=False)
-            # save chunk as hd5
-            out_filename = f"m_values_{i}_tmp.hd5"
-            vaex_df.export_hdf5(path=out_filename)
-            i+=1
-            chunk_list.append(out_filename)
-            del chunk
-        # load all chunks into vaex
-        master_df = vaex.open_many(chunk_list)
-        master_df.export_hdf5(path=output.M_out)    
-        shell("rm m_values_*_tmp.hd5")
-
 # feature selection on methylation (B) data
 # ANOVA fscore filter + linearSVC l1
 rule meth_FeatCleanSelect:
     input:
         response = rules.trainTest_split.output.response_tab,
-        meth_m = ancient("m_values.hd5"),
+        meth_m = datadir + "/methylation/m_values_Umberto.hdf5",
         meth_B_DTpval = datadir + "/methylation/beta_DT-pvalue_Xeno.tsv",
         meth_m_sd = datadir + "/methylation/m_sdvalue.tsv"
     output:
@@ -157,8 +116,54 @@ rule meth_FeatCleanSelect:
     params:
         target_col = "Cetuximab_Standard_3wks_cat",
         binom_test_FDR = .05,
-        sd_pctl = "25%",
+        sd_pctl = "30%"
     log: "meth_FeatCleanSelect.log"
     threads: 8
     script:
         srcdir+"/2_PDx_Meth_MultiFeatSelect.py"
+
+
+rule MultiFeatSelect_post_train:
+    input:
+        response = rules.trainTest_split.output.response_tab,
+        mutVAF_Xtrain = rules.mutVAF_FeatClean.output.Xtrain,
+        mut_Xtrain = rules.mut_FeatClean.output.Xtrain,
+        cnv_Xtrain = rules.CN_FeatClean.output.Xtrain,
+        meth_Xtrain = rules.meth_FeatCleanSelect.output.Xtrain,
+        expr_Xtrain = rules.expr_FeatCleanSelect.output.Xtrain,
+    output:
+        mutVAF_Xtrain = "PDx_mutVAF_FeatSelect_Xtrain_post.tsv",
+        mut_Xtrain = "PDx_mut_FeatSelect_Xtrain_post.tsv",
+        cnv_Xtrain = "PDx_cnv_FeatSelect_Xtrain_post.tsv",
+        meth_Xtrain = "PDx_meth_FeatSelect_Xtrain_post.tsv", 
+        expr_Xtrain = "PDx_expr_FeatSelect_Xtrain_post.tsv",
+        Ytrain = "PDx_Ytrain_post.tsv" 
+    log:
+        "MultiFeatSelect_post_train.log"
+    params:
+       target_col = "Cetuximab_Standard_3wks_cat"
+    script:
+        srcdir+"/3_MultiFeatSelect_post.py"
+
+rule MultiFeatSelect_post_test:
+    input:
+        response = rules.trainTest_split.output.response_tab,
+        mutVAF_Xtest = rules.mutVAF_FeatClean.output.Xtest,
+        mut_Xtest = rules.mut_FeatClean.output.Xtest,
+        cnv_Xtest = rules.CN_FeatClean.output.Xtest,
+        meth_Xtest = rules.meth_FeatCleanSelect.output.Xtest,
+        expr_Xtest = rules.expr_FeatCleanSelect.output.Xtest,
+    output:
+        mutVAF_Xtest = "PDx_mutVAF_FeatSelect_Xtest_post.tsv",
+        mut_Xtest = "PDx_mut_FeatSelect_Xtest_post.tsv",
+        cnv_Xtest = "PDx_cnv_FeatSelect_Xtest_post.tsv",
+        meth_Xtest = "PDx_meth_FeatSelect_Xtest_post.tsv", 
+        expr_Xtest = "PDx_expr_FeatSelect_Xtest_post.tsv",
+        Ytest = "PDx_Ytest_post.tsv" 
+    log:
+        "MultiFeatSelect_post_test.log"
+    params:
+       target_col = "Cetuximab_Standard_3wks_cat"
+    script:
+        srcdir+"/3_MultiFeatSelect_post_test.py"
+
