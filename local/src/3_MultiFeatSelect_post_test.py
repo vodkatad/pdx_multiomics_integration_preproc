@@ -16,13 +16,13 @@ Expr_test = pd.read_csv(snakemake.input.expr_Xtest,
 Expr_test.columns = [c + "_expr" for c in Expr_test.columns]
 CNV_test = pd.read_csv(snakemake.input.cnv_Xtest,
                        sep="\t", header=0, index_col=0)
-CNV_test.columns = [c + "_cnv" for c in CNV_test.columnis]
+CNV_test.columns = [c + "_cnv" for c in CNV_test.columns]
 MutVAF_test = pd.read_csv(snakemake.input.mutVAF_Xtest,
                           sep="\t", header=0, index_col=0)
 MutVAF_test.columns = [c + "_mutVAF" for c in MutVAF_test.columns]
 Mut_test = pd.read_csv(snakemake.input.mut_Xtest,
                        sep="\t", header=0, index_col=0)
-Mut_train.columns = [c + "_mut" for c in Mut_train.columns]
+Mut_test.columns = [c + "_mut" for c in Mut_test.columns]
 # load response data for the training set
 target_col = snakemake.params.target_col
 drug_response_data = pd.read_csv(snakemake.input.response,
