@@ -5,13 +5,13 @@
 
 # ### Imports
 # Import libraries and write settings here.
-from helpers import remove_collinear_features
-import helpers
+import numpy as np
+import pandas as pd
+from helpers import remove_collinear_features_numba
+from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC, SVC
 from sklearn.metrics import roc_curve, multilabel_confusion_matrix, auc, matthews_corrcoef, roc_auc_score, accuracy_score
-import numpy as np
-import pandas as pd
 
 import matplotlib.pyplot as plt
 import seaborn as sb
@@ -26,8 +26,6 @@ sb.set_style("white", rc=custom_style)
 # Options for pandas
 # No warnings about setting value on copy of slice
 pd.options.mode.chained_assignment = None
-
-# import helper functions
 
 logfile = snakemake.log[0]
 # load sample id conversion table, drug response data
@@ -87,12 +85,12 @@ CNV_matrix.index = CNV_matrix.index.get_level_values("ircc_id").tolist()
 
 target_col = snakemake.params.target_col
 ctx3w_gat = drug_response_data[[
-    "ircc_id", target_col]].    set_index("ircc_id")
+    "ircc_id", target_col]].set_index("ircc_id")
 features_in = pd.merge(ctx3w_cat, CNV_matrix,
                        right_index=True, left_index=True)
 
-
-genes_tokeep = [g for g in features_in.columns if g in common_geneset]
+common_geneset = common_geneset + ["HER2"]
+genes_tokeep = [g for g in features_in.columns if g in set(common_geneset)]
 features_clean = features_in
 target_col = "Cetuximab_Standard_3wks_cat"
 features_col = np.array([c for c in features_clean.columns if c != target_col])
@@ -104,8 +102,9 @@ var_trsh = features_clean.var(axis=0).\
 features_clean = features_clean[(features_clean.var(axis=0) > var_trsh).index]
 
 # remove colinear features
-features_clean = remove_collinear_features(
-    features_clean, .7,
+features_clean = remove_collinear_features_numba(
+    features_clean,
+    snakemake.params.colinear_trsh,
     priority_features=genes_tokeep,
     logfile=logfile)
 features_col = features_clean.columns
