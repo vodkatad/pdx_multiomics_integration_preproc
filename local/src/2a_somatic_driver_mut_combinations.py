@@ -52,11 +52,7 @@ features_in = pd.get_dummies(features_pre.Gene)
 features_in["ircc_id"] = features_pre.ircc_id
 features_in = features_in.groupby("ircc_id").sum()
 
-# add some known driver mutation combos for CRC
-features_in["KRAS-BRAF-NRAS_triple_neg"] = (features_in.KRAS + features_in.BRAF + features_in.NRAS).\
-    replace({0: 1, 1: 0, 2: 0, 3: 0})
-features_in["KRAS-APC_double_pos"] = (features_in.KRAS + features_in.APC).\
-    replace({1: 0, 2: 1})
+
 # add drug response as target
 df1 = features_pre[[target_col, "ircc_id"]
                    ].drop_duplicates().set_index("ircc_id")
@@ -68,11 +64,16 @@ features_clean = features_in[features_col]
 # remove features with 0 variance
 features_clean = features_clean[(features_clean.var(axis=0) > 0).index]
 # remove colinear features
-feats_tokeep = ["KRAS-BRAF-NRAS_triple_neg", "KRAS-APC_double_pos"]
 features_clean = remove_collinear_features(features_clean[features_col],
                                            snakemake.params.colinear_trsh,
-                                           priority_features=feats_tokeep,
                                            logfile=snakemake.log[0])
+# add some known driver mutation combos for CRC
+features_clean["KRAS-BRAF-NRAS_triple_neg"] = features_in[["KRAS",
+                                                           "BRAF",
+                                                           "NRAS"]].sum(axis=1).\
+    replace({0: 1, 1: 0, 2: 0, 3: 0})
+features_clean["KRAS-APC_double_pos"] = features_in[["KRAS", "APC"]].sum(axis=1).\
+    replace({1: 0, 2: 1})
 features_col = features_clean.columns
 features_clean[target_col] = features_in[target_col]
 

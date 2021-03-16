@@ -50,7 +50,8 @@ features_pre = drug_mut_df[drug_mut_df["Final_Driver_Annotation"] == True][
 ].drop_duplicates()
 features_pre.Subs_VAF = features_pre.Subs_VAF.replace(".", 0).astype(float)
 features_pre.Indels_VAF = features_pre.Indels_VAF.replace(".", 0).astype(float)
-# pick the indel/SNP with the largest allele freq
+
+# for e/a gene,sample pick the indel/SNP with the largest allele freq
 df1 = features_pre.groupby(["ircc_id", "Gene"])[
     ["Subs_VAF", "Indels_VAF"]].\
     apply(lambda grp: grp.nlargest(1, ["Subs_VAF", "Indels_VAF"]))
@@ -60,7 +61,8 @@ df1 = df1.reset_index()[["ircc_id", "Gene", "max_VAF"]
                         ].set_index(["ircc_id", "Gene"]).unstack()
 df1.index = df1.index.values
 df1.columns = df1.columns.get_level_values("Gene").tolist()
-features_in = df1.fillna(0)
+features_in = df1.fillna(0).replace(np.inf, 0)
+
 # add drug response as target
 df1 = features_pre[[target_col, "ircc_id"]
                    ].drop_duplicates().set_index("ircc_id")
@@ -75,6 +77,13 @@ features_clean = features_clean[(features_clean.var(axis=0) > 0).index]
 features_clean = remove_collinear_features(features_clean[features_col],
                                            snakemake.params.colinear_trsh,
                                            logfile=snakemake.log[0])
+# add some known driver mutation combos for CRC
+features_clean["KRAS-BRAF-NRAS_triple_neg"] = features_in[["KRAS",
+                                                           "BRAF",
+                                                           "NRAS"]].min(axis=1)
+
+features_clean["KRAS-APC_double_pos"] = features_in[["KRAS",
+                                                     "APC"]].min(axis=1)
 features_col = features_clean.columns
 features_clean[target_col] = features_in[target_col]
 
