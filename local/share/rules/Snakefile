@@ -35,7 +35,7 @@ rule CN_FeatClean:
         Xtest = "PDx_CNV_FeatSelect_Xtest.tsv",
         loadings_fig = "PDx_CNV_FeatSelect_loadings_barplot.pdf"
     params:
-        var_pctl = "25%",
+        var_pctl = "5%",
         colinear_trsh = .7,
         target_col = "Cetuximab_Standard_3wks_cat"
     log:
@@ -122,7 +122,7 @@ rule meth_FeatCleanSelect:
     script:
         srcdir+"/2_PDx_Meth_MultiFeatSelect.py"
 
-
+# check, enforce instance consistency across all train sets
 rule MultiFeatSelect_post_train:
     input:
         response = rules.trainTest_split.output.response_tab,
@@ -145,6 +145,7 @@ rule MultiFeatSelect_post_train:
     script:
         srcdir+"/3_MultiFeatSelect_post.py"
 
+# check, enforce instance consistency across all test sets
 rule MultiFeatSelect_post_test:
     input:
         response = rules.trainTest_split.output.response_tab,
