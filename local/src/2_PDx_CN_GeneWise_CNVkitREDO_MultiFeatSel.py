@@ -7,7 +7,7 @@
 # Import libraries and write settings here.
 import numpy as np
 import pandas as pd
-from helpers import remove_collinear_features_numba
+from helpers import remove_collinear_features
 from sklearn.feature_selection import SelectKBest, f_classif
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC, SVC
@@ -28,10 +28,11 @@ sb.set_style("white", rc=custom_style)
 pd.options.mode.chained_assignment = None
 
 logfile = snakemake.log[0]
+target_col = snakemake.params.target_col
 # load sample id conversion table, drug response data
 drug_response_data = pd.read_csv(snakemake.input.response,
                                  sep="\t")
-ctx3w_cat = drug_response_data[["ircc_id", "Cetuximab_Standard_3wks_cat"]].\
+ctx3w_cat = drug_response_data[["ircc_id", target_col]].\
     set_index("ircc_id")
 
 # parse PDx segmented CNV data
@@ -56,10 +57,11 @@ PDx_CNV_data = pd.read_csv(snakemake.input.cnv,
                                   "length_segment-gene_overlap"])
 PDx_CNV_data["seg_id"] = PDx_CNV_data.agg(
     lambda x: f"{x['chr']}:{x['begin']}-{x['end']};{x['sample']}", axis=1)
-PDx_CNV_data["gene_HUGO_id"] = PDx_CNV_data["gene_symbol"].str.replace(
-    ".", "NA")
+PDx_CNV_data["gene_HUGO_id"] = PDx_CNV_data["gene_symbol"]
+# drop segments missing gene symbol
+PDx_CNV_data = PDx_CNV_data[PDx_CNV_data["gene_HUGO_id"] != "."]
 PDx_CNV_data["sample"] = PDx_CNV_data["sample"].apply(lambda x: x+"_hum")
-
+target_col = "Cetuximab_Standard_3wks_cat"
 # load shared set of genes for intogen and targeted sequencing
 common_geneset = pd.read_table(snakemake.input.targeted,
                                header=None, sep="\t")
@@ -83,16 +85,14 @@ CNV_matrix.columns = CNV_matrix.columns.get_level_values(
     "gene_HUGO_id").tolist()
 CNV_matrix.index = CNV_matrix.index.get_level_values("ircc_id").tolist()
 
-target_col = snakemake.params.target_col
 ctx3w_gat = drug_response_data[[
     "ircc_id", target_col]].set_index("ircc_id")
 features_in = pd.merge(ctx3w_cat, CNV_matrix,
                        right_index=True, left_index=True)
 
-common_geneset = common_geneset + ["HER2"]
+common_geneset = common_geneset
 genes_tokeep = [g for g in features_in.columns if g in set(common_geneset)]
 features_clean = features_in
-target_col = "Cetuximab_Standard_3wks_cat"
 features_col = np.array([c for c in features_clean.columns if c != target_col])
 features_clean = features_clean[features_col]
 
@@ -102,7 +102,7 @@ var_trsh = features_clean.var(axis=0).\
 features_clean = features_clean[(features_clean.var(axis=0) > var_trsh).index]
 
 # remove colinear features
-features_clean = remove_collinear_features_numba(
+features_clean = remove_collinear_features(
     features_clean,
     snakemake.params.colinear_trsh,
     priority_features=genes_tokeep,
