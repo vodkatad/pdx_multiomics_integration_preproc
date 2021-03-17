@@ -3,33 +3,34 @@ library("mixOmics")
 require(data.table)
 
 # load train data for e/a omic
-f <- "tables/PDx_Expr_MultiFeatSelect_XtrainClean.tsv"
+f <- snakemake@input[["expr_Xtrain"]]
 expr <- as.data.frame(fread(f, header = TRUE, sep="\t"))
 rownames(expr)<-expr$V1
 expr<-subset(expr, select = -c(V1))
 f <- "tables/PDx_Meth_MultiFeatSelect_XtrainClean.tsv"
+f <- snakemake@input[["meth_Xtrain"]]
 meth <- as.data.frame(fread(f, header = TRUE, sep="\t"))
 rownames(meth)<-rownames(expr)
 meth<-subset(meth, select = -c(V1))
-f <- "tables/PDx_CNV_FeatSelect_XtrainClean.tsv"
+f <- snakemake@input[["cnv_Xtrain"]]
 cnv <- as.data.frame(fread(f, header = TRUE, sep="\t"))
 rownames(cnv)<-rownames(expr)
 cnv<-subset(cnv, select = -c(V1))
-f <- "tables/PDx_driverMutVAF_FeatSelect_XtrainClean.tsv"
+f <- snakemake@input[["mut_Xtrain"]]
 mut <- as.data.frame(fread(f, header = TRUE, sep="\t"))
 rownames(mut)<-rownames(expr)
 mut<-subset(mut, select = -c(V1))
 
 # load target
-f <- "tables/Cetuximab_3w_cat_trainClean.tsv"
+f <- snakemake@input[["Ytrain"]]
 Y<-as.data.frame(fread(f, header = TRUE, sep="\t"))
 rownames(Y)<-rownames(expr)
-Y<-factor(Y$Cetuximab_Standard_3wks_cat)
+Y<-factor(Y$snakemake@params[["target_col"]])
 
 # integrate the omics
 data<-list(expr=expr, mut=mut, meth=meth, cnv=cnv)
 
-#fit a DIABLO model without variable selection to assess 
+#first fit a DIABLO model without variable selection to assess 
 # the global performance and choose the number of components for the final model. 
 
 # the design matrix (omics x omics) sets the expected covariance between the OMICs chosen based on prior knowledge.
@@ -39,30 +40,25 @@ design=matrix(1,ncol=length(data),
               dimnames=list(names(data),names(data)))
 diag(design)=0
 
+# assess the performance of this first model
 # perf is run with nfold-fold cross validation for nrepeat times. 
 splsda.res = block.splsda(X = data, Y = Y, ncomp = 8, design = design)
 perf.diablo = perf(splsda.res, validation = 'Mfold', 
                    folds = 2, nrepeat = 5, 
                    progressBar=FALSE, cpus=4)
-plot(perf.diablo)
 # plot error rate by number of components used by the model
-pdf("figures/DIABLO_ncompBER_lineplot.pdf",
+pdf(snakemake@output[["ncompBER_plot"]]
     width = 8, height = 5, bg = "white", 
     colormodel = "cmyk",paper = "A4") 
 plot(perf.diablo) 
 dev.off() 
 
 # optimise the number of features for each 'omic, component
-#test.keepX=list("expr"=c(seq(80,200,20)),
-#                "mut"=c(dim(mut)[2]),
-#               "meth"=c(seq(8, 26, 2)),
-#                "cnv"=c(seq(5,50,10)))
 test.keepX=list("expr"=c(seq(5, 30, 5)),
-                "mut"=c(seq(5, 30, 5)),
+                "mut"=c(seq(5, 15, 5)),
                "meth"=c(seq(5, 30, 5)),
                 "cnv"=c(seq(5, 30, 5)))
 
-ptm<-proc.time()
 #optimal_ncomp<-perf.diablo$choice.ncomp$WeightedVote["Overall.BER", "mahalanobis.dist"]
 optimal_ncomp<-3
 tune.omics=tune.block.splsda(X=data,Y=Y,
@@ -71,15 +67,8 @@ tune.omics=tune.block.splsda(X=data,Y=Y,
                              validation="Mfold",folds=4,nrepeat=10,
                              near.zero.var=FALSE,
                              dist = "mahalanobis.dist")
-my_time<-proc.time()-ptm
-print(paste0("Thus it takes ",as.numeric(my_time["elapsed"])/3600,"h to run this piece of code"))
-tune.omics$choice.keepX
 
 # final sPLS-DA modelling, display PCA plots and loadings. 
-#list.keepX=list("expr"=tune.omics$choice.keepX$expr,
-#"mut"=tune.omics$choice.keepX$mut,
-#"meth"=tune.omics$choice.keepX$meth,
-#"cnv"=tune.omics$choice.keepX$cnv)
 optimal_ncomp<-tune.omics$choice.ncomp$ncomp
 list.keepX=list("expr"=first(tune.omics$choice.keepX$expr, optimal_ncomp),
                 "mut"=first(tune.omics$choice.keepX$mut, optimal_ncomp),

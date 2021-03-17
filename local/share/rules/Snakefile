@@ -30,13 +30,15 @@ rule CN_FeatClean:
         response = rules.trainTest_split.output.response_tab,
         cnv = datadir + "/CNA_annotation/our_cn_genes2_CNVkitREDO_25012021.tsv",
         targeted = datadir + "/targeted_intogen_common_geneset.tsv",
+        TCGA_CNV = datadir + "/TCGA_COADREAD_02092020_maskedCNS_intogen_admire-gistic_genewise_CNV_mapToGene.tsv"
     output:
         Xtrain = "PDx_CNV_FeatSelect_Xtrain.tsv",
         Xtest = "PDx_CNV_FeatSelect_Xtest.tsv",
         loadings_fig = "PDx_CNV_FeatSelect_loadings_barplot.pdf"
     params:
-        var_pctl = "5%",
-        colinear_trsh = .7,
+        var_thrs = "95%", # remove binary features w/t low variability (> var_thrs)
+        similarity_trsh = .8, # combine similar features (product)
+        ANOVA_pctl = 20,
         target_col = "Cetuximab_Standard_3wks_cat"
     log:
         "CN_FeatClean.log"
@@ -56,7 +58,9 @@ rule mut_FeatClean:
         Xtest = "PDx_mut_FeatSelect_Xtest.tsv",
         loadings_fig = "PDx_mut_FeatSelect_loadings_barplot.pdf"
     params:
-        colinear_trsh = .7,
+        var_thrs = "99%", # remove binary features w/t low variability (> var_thrs)
+        similarity_trsh = .8, # combine similar features (product)
+        ANOVA_pctl = 30, 
         target_col = "Cetuximab_Standard_3wks_cat"
     log: "mut_FeatClean.log"
     script:
@@ -168,3 +172,19 @@ rule MultiFeatSelect_post_test:
     script:
         srcdir+"/3_MultiFeatSelect_post_test.py"
 
+#snakemake@input[["myfile"]]
+rule train_test_DIABLO:
+    input:
+        mutVAF_Xtrain  = rules.MultiFeatSelect_post_train.output.mutVAF_Xtrain,
+        mut_Xtrain  = rules.MultiFeatSelect_post_train.output.mut_Xtrain, 
+        cnv_Xtrain  = rules.MultiFeatSelect_post_train.output.cnv_Xtrain, 
+        meth_Xtrain  = rules.MultiFeatSelect_post_train.output.meth_Xtrain,
+        expr_Xtrain  = rules.MultiFeatSelect_post_train.output.expr_Xtrain,
+        Ytrain = rules.MultiFeatSelect_post_train.output.Ytrain, 
+        mutVAF_Xtest  = rules.MultiFeatSelect_post_test.output.mutVAF_Xtest,
+        mut_Xtest  = rules.MultiFeatSelect_post_test.output.mut_Xtest, 
+        cnv_Xtest  = rules.MultiFeatSelect_post_test.output.cnv_Xtest, 
+        meth_Xtest  = rules.MultiFeatSelect_post_test.output.meth_Xtest,
+        expr_Xtest  = rules.MultiFeatSelect_post_test.output.expr_Xtest,
+        Ytest = rules.MultiFeatSelect_post_test.output.Ytest
+    output:
