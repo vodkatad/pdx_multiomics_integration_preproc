@@ -16,7 +16,7 @@ from sklearn.metrics import roc_curve, multilabel_confusion_matrix, auc, matthew
 # feature selection
 from sklearn.feature_selection import SelectFromModel
 from sklearn.feature_selection import VarianceThreshold
-from sklearn.feature_selection import SelectPercentile, f_classif
+from sklearn.feature_selection import SelectPercentile, f_classif, chi2
 
 from helpers import combine_binary_features
 
@@ -71,7 +71,6 @@ features_in = features_in[~features_in[target_col].isna()].\
     drop_duplicates()
 
 # clean features
-features_col = [c for c in features_in.columns if c != target_col]
 features_clean = features_in.drop(target_col, axis=1)
 
 # add some known driver mutation combos for CRC
@@ -82,6 +81,7 @@ features_clean["KRAS-BRAF-NRAS_triple_neg"] = features_in[["KRAS",
 features_clean["KRAS-APC_double_pos"] = features_in[["KRAS", "APC"]].sum(axis=1).\
     replace({1: 0, 2: 1})
 features_col = features_clean.columns
+print(len(features_col))
 features_clean[target_col] = features_in[target_col]
 
 TT_df = drug_response_data[drug_response_data.ircc_id.isin(features_clean.index)][
@@ -103,7 +103,7 @@ thresholder = VarianceThreshold(threshold=(
 features_tokeep = X_train.columns[thresholder.fit(X_train).get_support()]
 X_train = X_train[features_tokeep]
 X_test = X_test[features_tokeep]
-
+print(len(features_tokeep))
 # combine similar features via product
 similarity_trsh = snakemake.params.similarity_trsh
 X_train = combine_binary_features(X_train, similarity_trsh, max_combine=3)
@@ -115,13 +115,14 @@ for cols in combined_features:
     X_test_clean_combine["+".join(cols)] = X_test[cols].product(axis=1)
     X_test_clean_combine.drop(cols, axis=1, inplace=True)
 X_test = X_test_clean_combine
-
+print(len(X_test_clean_combine.columns))
 # univariate feature selection via ANOVA f-value filter
 ANOVA_pctl = snakemake.params.ANOVA_pctl
-ANOVA_support = SelectPercentile(f_classif,
+ANOVA_support = SelectPercentile(chi2,
                                  percentile=ANOVA_pctl).\
     fit(X_train, y_train).get_support()
 ANOVA_selected = X_train.columns[ANOVA_support]
+print(len(ANOVA_selected))
 
 # transform train, test datasets
 X_train = X_train[ANOVA_selected]

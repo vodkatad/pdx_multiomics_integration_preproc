@@ -15,7 +15,7 @@ from sklearn.metrics import roc_curve, multilabel_confusion_matrix, auc, matthew
 # feature selection
 from sklearn.feature_selection import SelectFromModel
 from sklearn.feature_selection import VarianceThreshold
-from sklearn.feature_selection import SelectPercentile, f_classif
+from sklearn.feature_selection import SelectPercentile, f_classif, chi2
 
 import pickle
 from helpers import combine_binary_features
@@ -131,6 +131,7 @@ features_in = features_in[~features_in[target_col].isna()].\
 
 # train-test split
 features_col = [c for c in features_in.columns if c != target_col]
+print(len(features_col))
 TT_df = drug_response_data[drug_response_data.ircc_id.isin(features_in.index)][
     ["ircc_id", "is_test"]]
 train_models = TT_df[TT_df.is_test == False].ircc_id.unique()
@@ -148,7 +149,7 @@ thresholder = VarianceThreshold(threshold=(
 features_tokeep = X_train.columns[thresholder.fit(X_train).get_support()]
 X_train_clean = X_train[features_tokeep]
 X_test_clean = X_test[features_tokeep]
-
+print(len(features_tokeep))
 # combine similar features via product
 similarity_trsh = snakemake.params.similarity_trsh
 X_train_clean_combine = combine_binary_features(X_train_clean,
@@ -161,14 +162,14 @@ X_test_clean_combine = X_test_clean.copy()
 for cols in combined_features:
     X_test_clean_combine["+".join(cols)] = X_test_clean[cols].product(axis=1)
     X_test_clean_combine.drop(cols, axis=1, inplace=True)
-
+print(len(X_train_clean_combine.columns))
 # univariate feature selection via ANOVA f-value filter
 ANOVA_pctl = snakemake.params.ANOVA_pctl
-ANOVA_support = SelectPercentile(f_classif,
+ANOVA_support = SelectPercentile(chi2,
                                  percentile=ANOVA_pctl).\
     fit(X_train_clean_combine, y_train).get_support()
 ANOVA_selected = X_train_clean_combine.columns[ANOVA_support]
-
+print(len(ANOVA_selected))
 # transform train, test datasets
 X_train = X_train_clean_combine[ANOVA_selected]
 X_test = X_test_clean_combine[ANOVA_selected]
