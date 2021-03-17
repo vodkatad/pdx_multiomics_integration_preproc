@@ -140,21 +140,14 @@ grid_cv = GridSearchCV(estimator=pipeline,
                        return_train_score=True)
 grid_cv.fit(X_train, y_train)
 
-# Set up the random search with 4-fold cross validation
-grid_cv = GridSearchCV(estimator=pipeline,
-                       param_grid=hyperparameter_grid,
-                       cv=4,  # n_iter=100,
-                       scoring="accuracy",
-                       n_jobs=-1, refit=True,
-                       return_train_score=True)
-grid_cv.fit(X_train, y_train)
-grid_cv_test_score = grid_cv.score(X_test, y_test)
 
 # grid search params tuning results
 CVresult_df = pd.DataFrame(grid_cv.cv_results_)
 CVresult_df.sort_values("rank_test_score")[
     ["rank_test_score", "mean_train_score", "mean_test_score"]].head()
 CVresult_df.to_csv(snakemake.log[0], sep="\t")
+
+grid_cv_test_score = grid_cv.score(X_test, y_test)
 
 y_classes = input_matrix[target_col].unique().tolist()
 Y_pred = grid_cv.predict(X_test)
@@ -341,6 +334,7 @@ fig, ax = plt.subplots(figsize=(10, 16))
 ax = sb.barplot(x="coeff",
                 y="feature",
                 hue="class",
+                hue_order=sorted(y_classes),
                 palette="Set2",
                 data=plot_df)
 st = fig.suptitle(printout, y=.95, fontsize=18)

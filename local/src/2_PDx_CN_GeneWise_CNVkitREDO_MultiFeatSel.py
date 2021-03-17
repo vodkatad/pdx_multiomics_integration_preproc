@@ -219,7 +219,7 @@ fig, ax = plt.subplots(figsize=(10, 16))
 ax = sb.barplot(x="coeff",
                 y="feature",
                 hue="class",
-                hue_order=["PD", "SD", "OR"],
+                hue_order=sorted(y_classes),
                 palette="Set2",
                 data=plot_df)
 st = fig.suptitle(printout, y=.95, fontsize=18)
