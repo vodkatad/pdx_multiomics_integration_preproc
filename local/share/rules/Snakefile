@@ -172,7 +172,6 @@ rule MultiFeatSelect_post_test:
     script:
         srcdir+"/3_MultiFeatSelect_post_test.py"
 
-#snakemake@input[["myfile"]]
 rule train_test_DIABLO:
     input:
         mutVAF_Xtrain  = rules.MultiFeatSelect_post_train.output.mutVAF_Xtrain,
@@ -188,3 +187,23 @@ rule train_test_DIABLO:
         expr_Xtest  = rules.MultiFeatSelect_post_test.output.expr_Xtest,
         Ytest = rules.MultiFeatSelect_post_test.output.Ytest
     output:
+        ncompBER_plot = "PDx_IntegratedDIABLO_ncompBER_lineplot.pdf",
+        splsda_model =  "PDx_IntegratedTunedDIABLO_splsda.rds",
+        trainBER_table = "PDx_IntegratedTunedDIABLO_BER.tsv", 
+        PlotIndiv = "PDx_IntegratedTunedDIABLO_PlotIndiv.pdf",
+        PlotLoadings = "PDx_IntegratedTunedDIABLO_PlotLoadings.pdf",
+        loadings_table = "PDx_IntegratedTunedDIABLO_loadings.tsv",
+        plotDiablo = "PDx_IntegratedTunedDIABLO_plotDiablo.pdf",
+        plotArrow = "PDx_IntegratedTunedDIABLO_plotArrow.pdf",
+        circosPlot = "PDx_IntegratedTunedDIABLO_circosPlot.pdf",
+        corrHeatmap = "PDx_IntegratedTunedDIABLO_corrHeatmap.pdf",
+        confusionMat = "PDx_IntegratedTunedDIABLO_confusionMat.tsv"
+    conda: ../../local/share/environments/PDx_OmicsIntegration.yml
+    threads: 8    
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        max_ncomp = 4
+    log:
+       "train_test_DIABLO.log"
+    script:
+         srcdir+"/DIABLO_integrated_model.R"
