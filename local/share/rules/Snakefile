@@ -172,7 +172,7 @@ rule MultiFeatSelect_post_test:
     script:
         srcdir+"/3_MultiFeatSelect_post_test.py"
 
-rule train_test_DIABLO:
+rule train_DIABLO:
     input:
         mutVAF_Xtrain  = rules.MultiFeatSelect_post_train.output.mutVAF_Xtrain,
         mut_Xtrain  = rules.MultiFeatSelect_post_train.output.mut_Xtrain, 
@@ -180,6 +180,19 @@ rule train_test_DIABLO:
         meth_Xtrain  = rules.MultiFeatSelect_post_train.output.meth_Xtrain,
         expr_Xtrain  = rules.MultiFeatSelect_post_train.output.expr_Xtrain,
         Ytrain = rules.MultiFeatSelect_post_train.output.Ytrain, 
+    output:
+        ncompBER_plot = "PDx_IntegratedDIABLO_ncompBER_lineplot.pdf",
+        splsda_model =  "PDx_IntegratedTunedDIABLO_splsda.rds",
+    threads: 8    
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        max_ncomp = 4
+    script:
+         srcdir+"/DIABLO_integrated_model.R"
+
+rule perf_DIABLO:
+    input:
+        model = rules.train_DIABLO.output.splsda_model,
         mutVAF_Xtest  = rules.MultiFeatSelect_post_test.output.mutVAF_Xtest,
         mut_Xtest  = rules.MultiFeatSelect_post_test.output.mut_Xtest, 
         cnv_Xtest  = rules.MultiFeatSelect_post_test.output.cnv_Xtest, 
@@ -187,8 +200,6 @@ rule train_test_DIABLO:
         expr_Xtest  = rules.MultiFeatSelect_post_test.output.expr_Xtest,
         Ytest = rules.MultiFeatSelect_post_test.output.Ytest
     output:
-        ncompBER_plot = "PDx_IntegratedDIABLO_ncompBER_lineplot.pdf",
-        splsda_model =  "PDx_IntegratedTunedDIABLO_splsda.rds",
         trainBER_table = "PDx_IntegratedTunedDIABLO_BER.tsv", 
         PlotIndiv = "PDx_IntegratedTunedDIABLO_PlotIndiv.pdf",
         PlotLoadings = "PDx_IntegratedTunedDIABLO_PlotLoadings.pdf",
@@ -198,12 +209,11 @@ rule train_test_DIABLO:
         circosPlot = "PDx_IntegratedTunedDIABLO_circosPlot.pdf",
         corrHeatmap = "PDx_IntegratedTunedDIABLO_corrHeatmap.pdf",
         confusionMat = "PDx_IntegratedTunedDIABLO_confusionMat.tsv"
-    conda: ../../local/share/environments/PDx_OmicsIntegration.yml
     threads: 8    
     params:
         target_col = "Cetuximab_Standard_3wks_cat",
-        max_ncomp = 4
     log:
-       "train_test_DIABLO.log"
+       "perf_DIABLO.log"
     script:
-         srcdir+"/DIABLO_integrated_model.R"
+         srcdir+"/DIABLO_integrated_model_perf.R"
+
