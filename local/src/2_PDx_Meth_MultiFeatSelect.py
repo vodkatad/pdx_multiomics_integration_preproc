@@ -215,36 +215,35 @@ fig.patch.set_facecolor('white')
 Y_tar_list = y_test.tolist()
 labels1 = pd.Series(Y_tar_list)
 
-full_labels = {"OR": "Objective Response (<-50%)",
-               "PD": "Progressive Disease (>35%)",
-               "SD": "Stable Disease"}
+full_labels = dict(zip(snakemake.params.class_labels,
+                       snakemake.params.full_labels)}
 
 
 arr = [pd.Series(a) for a in [labels1, X0, X1]]
 plot_df = pd.concat(arr, axis=1)
 plot_df.columns = ["true_class", "PC_1", "PC_2"]
-hue_order = ["OR", "PD", "SD"]
+hue_order = snakemake.params.class_labels]
 cdict2 = dict(zip(hue_order, [1, 2, 3]))
 
 # draw contours showing model predictions
 cs = plot_contours(ax, classify, xx, yy,
-                   colors=["limegreen", "peru", "w", "deepskyblue", "w"],
-                   alpha=0.5, levels=3, label="Prediction")
+                   colors = ["limegreen", "peru", "w", "deepskyblue", "w"],
+                   alpha = 0.5, levels = 3, label = "Prediction")
 
 # scatter PC1, PC2 coords for each test instance
-ax = sb.scatterplot(data=plot_df,
-                    x="PC_1",
-                    y="PC_2",
-                    hue_order=hue_order,
-                    hue="true_class",
-                    palette=["limegreen", "peru", "deepskyblue"],
-                    alpha=1,
-                    s=60,
-                    zorder=20,
-                    ax=ax)
+ax=sb.scatterplot(data = plot_df,
+                    x = "PC_1",
+                    y = "PC_2",
+                    hue_order = hue_order,
+                    hue = "true_class",
+                    palette = ["limegreen", "peru", "deepskyblue"],
+                    alpha = 1,
+                    s = 60,
+                    zorder = 20,
+                    ax = ax)
 
 # highlight support vector instances
-sv = ax.scatter(classify.support_vectors_[:, 0],
+sv=ax.scatter(classify.support_vectors_[:, 0],
                 classify.support_vectors_[:, 1],
                 s=60, facecolors='none',
                 edgecolors='k', label='Support Vectors',

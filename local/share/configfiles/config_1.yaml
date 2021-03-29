@@ -5,6 +5,8 @@ DATA_DIR: "/local/share/data"
 SRC: "../../local/src"
 TEST_SIZE: .3
 TARGET_COL: "Cetuximab Standard 3wks"
+FULL_CLASS_LABELS:
+  ["Objective Response (<-50%)", "Stable Disease", "Progressive Disease (>35%)"]
 CLASS_LABELS: ["OR", "SD", "PD"]
 CLASS_BINS: [-50, 35]
 DIABLO_MINFEATURES: 5

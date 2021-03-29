@@ -207,14 +207,13 @@ fig.patch.set_facecolor('white')
 Y_tar_list = y_test.tolist()
 labels1 = pd.Series(Y_tar_list)
 
-full_labels = {"OR": "Objective Response (<-50%)",
-               "PD": "Progressive Disease (>35%)",
-               "SD": "Stable Disease"}
+full_labels = dict(zip(snakemake.params.class_labels,
+                       snakemake.params.full_labels))
 
 arr = [pd.Series(a) for a in [labels1, X0, X1]]
 plot_df = pd.concat(arr, axis=1)
 plot_df.columns = ["true_class", "PC_1", "PC_2"]
-hue_order = ["OR", "PD", "SD"]
+hue_order = snakemake.params.class_labels
 cdict2 = dict(zip(hue_order, [1, 2, 3]))
 
 # draw contours showing model predictions
