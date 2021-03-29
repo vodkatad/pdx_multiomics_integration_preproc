@@ -97,7 +97,9 @@ rule expr_FeatCleanSelect:
         featSelect_model = "PDx_expr_FeatSelect_lSVC.pkl",
         loadings_fig = "PDx_expr_FeatSelect_loadings_barplot.pdf"
     params:
-        target_col = "Cetuximab_Standard_3wks_cat"
+        target_col = "Cetuximab_Standard_3wks_cat",
+        full_labels = config['FULL_CLASS_LABELS'],
+        class_labels = config['CLASS_LABELS']
     log: "expr_FeatCleanSelect.log"
     threads: 8
     script:
@@ -120,7 +122,9 @@ rule meth_FeatCleanSelect:
     params:
         target_col = "Cetuximab_Standard_3wks_cat",
         binom_test_FDR = .05,
-        sd_pctl = "30%"
+        sd_pctl = "30%",
+        full_labels = config['FULL_CLASS_LABELS'],
+        class_labels = config['CLASS_LABELS'] 
     log: "meth_FeatCleanSelect.log"
     threads: 8
     script:

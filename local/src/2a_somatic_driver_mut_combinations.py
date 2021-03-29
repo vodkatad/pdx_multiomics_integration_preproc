@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC, SVC
-from sklearn.metrics import roc_curve, multilabel_confusion_matrix, auc, matthews_corrcoef, roc_auc_score, accuracy_score
+from sklearn.metrics import multilabel_confusion_matrix, matthews_corrcoef, confusion_matrix, accuracy_score
 # feature selection
 from sklearn.feature_selection import SelectFromModel
 from sklearn.feature_selection import VarianceThreshold
@@ -142,8 +142,15 @@ svm = LinearSVC(penalty="l1", dual=False, max_iter=5000).fit(X_train, Y_train)
 # calc performance metric
 y_classes = features_clean[target_col].unique().tolist()
 Y_pred = svm.predict(X_test)
-multi_cm = multilabel_confusion_matrix(Y_test, Y_pred, labels=y_classes)
-tn, fp, fn, tp = [i for i in sum(multi_cm).ravel()]
+
+# if multiclass predictor
+if len(svm.classes_) > 2:
+    cm = multilabel_confusion_matrix(Y_test, Y_pred, labels=y_classes)
+    tn, fp, fn, tp = [i for i in sum(cm).ravel()]
+else:
+    cm = confusion_matrix(Y_test, Y_pred)
+    tn, fp, fn, tp = cm.ravel()
+
 accuracy = tp + tn / (tp + fp + fn + tn)
 precision = tp / (tp + fp)
 recall = tp / (tp + fn)
@@ -158,26 +165,45 @@ printout = f"Model: LinearSVC |\
      F1: {F1: .4f} | \
      Accu: {accuracy: .4f}"
 
-# get linear SVC feature coefficients
-coeff_plot_df = pd.DataFrame(svm.coef_.T,
-                             columns=svm.classes_,
-                             index=ANOVA_selected)
-coeff_plot_df = coeff_plot_df.stack().reset_index()
-coeff_plot_df.columns = ["feature", "class", "coeff"]
-coeff_plot_df = coeff_plot_df.sort_values("coeff")
+# if multiclass
+if len(svm.classes_) > 2:
+    # get linear SVC feature coefficients
+    coeff_plot_df = pd.DataFrame(svm.coef_.T,
+                                 columns=svm.classes_,
+                                 index=ANOVA_selected)
+    coeff_plot_df = coeff_plot_df.stack().reset_index()
+    coeff_plot_df.columns = ["feature", "class", "coeff"]
+    coeff_plot_df = coeff_plot_df.sort_values("coeff")
 
-# select top / bottom features
-top = pd.concat(
-    [coeff_plot_df.head(15), coeff_plot_df.tail(15)]).feature.unique()
-plot_df = coeff_plot_df[coeff_plot_df.feature.isin(top)]
+    # select top / bottom features
+    top = pd.concat(
+        [coeff_plot_df.head(15), coeff_plot_df.tail(15)]).feature.unique()
+    plot_df = coeff_plot_df[coeff_plot_df.feature.isin(top)]
 
-fig, ax = plt.subplots(figsize=(10, 16))
-ax = sb.barplot(x="coeff",
-                y="feature",
-                hue="class",
-                hue_order=sorted(y_classes),
-                palette="Set2",
-                data=plot_df)
+    fig, ax = plt.subplots(figsize=(10, 16))
+    ax = sb.barplot(x="coeff",
+                    y="feature",
+                    hue="class",
+                    hue_order=sorted(y_classes),
+                    palette="Set2",
+                    data=plot_df)
+else:
+    # get linear SVC feature coefficients
+    coeff_plot_df = pd.DataFrame(svm.coef_.T,
+                                 index=ANOVA_selected)
+    coeff_plot_df = coeff_plot_df.stack().reset_index()
+    coeff_plot_df.columns = ["feature", "class", "coeff"]
+    coeff_plot_df = coeff_plot_df.sort_values("coeff")
+    # select top / bottom features
+    top = pd.concat(
+        [coeff_plot_df.head(15), coeff_plot_df.tail(15)]).feature.unique()
+    plot_df = coeff_plot_df[coeff_plot_df.feature.isin(top)]
+
+    fig, ax = plt.subplots(figsize=(10, 16))
+    ax = sb.barplot(x="coeff",
+                    y="feature",
+                    palette="Set2",
+                    data=plot_df)
 st = fig.suptitle(printout, y=.95, fontsize=18)
 fig.tight_layout
 fig.savefig(snakemake.output.loadings_fig,

@@ -21,7 +21,7 @@ from sklearn.svm import LinearSVC, SVC
 from sklearn.feature_selection import SelectFromModel
 from sklearn.feature_selection import SelectKBest, f_classif
 # benchmark
-from sklearn.metrics import multilabel_confusion_matrix, matthews_corrcoef, accuracy_score
+from sklearn.metrics import multilabel_confusion_matrix, confusion_matrix, matthews_corrcoef, accuracy_score
 # Hyperparameter tuning
 from sklearn.model_selection import GridSearchCV
 
@@ -146,8 +146,15 @@ grid_cv_test_score = grid_cv.score(X_test, y_test)
 
 y_classes = input_matrix[target_col].unique().tolist()
 Y_pred = grid_cv.predict(X_test)
-multi_cm = multilabel_confusion_matrix(y_test, Y_pred, labels=y_classes)
-tn, fp, fn, tp = [i for i in sum(multi_cm).ravel()]
+
+# if multiclass predictor
+if len(snakemake.params.class_labels) > 2:
+    cm = multilabel_confusion_matrix(Y_test, Y_pred, labels=y_classes)
+    tn, fp, fn, tp = [i for i in sum(cm).ravel()]
+else:
+    cm = confusion_matrix(Y_test, Y_pred)
+    tn, fp, fn, tp = cm.ravel()
+
 accuracy = tp + tn / (tp + fp + fn + tn)
 precision = tp / (tp + fp)
 recall = tp / (tp + fn)
@@ -218,8 +225,10 @@ cdict2 = dict(zip(hue_order, [1, 2, 3]))
 
 # draw contours showing model predictions
 cs = plot_contours(ax, classify, xx, yy,
-                   colors=["limegreen", "peru", "w", "deepskyblue", "w"],
-                   alpha=0.5, levels=3, label="Prediction")
+                   colors=["limegreen", 'w', "deepskyblue", "w"],
+                   alpha=0.5,
+                   levels=len(snakemake.params.class_labels),
+                   label="Prediction")
 
 # scatter PC1, PC2 coords for each test instance
 ax = sb.scatterplot(data=plot_df,
@@ -227,7 +236,8 @@ ax = sb.scatterplot(data=plot_df,
                     y="PC_2",
                     hue_order=hue_order,
                     hue="true_class",
-                    palette=["limegreen", "peru", "deepskyblue"],
+                    palette=["limegreen",
+                             "deepskyblue", "peru"][:len(hue_order)],
                     alpha=1,
                     s=60,
                     zorder=20,
@@ -305,30 +315,53 @@ X_test = pd.DataFrame(StandardScaler().fit_transform(X_test.values),
 X_train.to_csv(snakemake.output.Xtrain, sep="\t")
 X_test.to_csv(snakemake.output.Xtest, sep="\t")
 
+if len(svm.classes_) > 2:
+    # get the feature selector (linear SVC) coeff
+    coeff_plot_df = pd.DataFrame(selector.estimator_.coef_.T,
+                                 columns=svm.classes_,
+                                 index=ANOVA_selected)
+    # keep only supported features
+    coeff_plot_df["support"] = selector.get_support()
+    coeff_plot_df = coeff_plot_df[coeff_plot_df["support"]
+                                  == True][svm.classes_]
+    coeff_plot_df = coeff_plot_df.stack().reset_index()
+    coeff_plot_df.columns = ["feature", "class", "coeff"]
+    coeff_plot_df = coeff_plot_df.sort_values("coeff")
 
-# get the feature selector (linear SVC) coeff
-coeff_plot_df = pd.DataFrame(selector.estimator_.coef_.T,
-                             columns=svm.classes_,
-                             index=ANOVA_selected)
-# keep only supported features
-coeff_plot_df["support"] = selector.get_support()
-coeff_plot_df = coeff_plot_df[coeff_plot_df["support"] == True][svm.classes_]
-coeff_plot_df = coeff_plot_df.stack().reset_index()
-coeff_plot_df.columns = ["feature", "class", "coeff"]
-coeff_plot_df = coeff_plot_df.sort_values("coeff")
+    # select top / bottom features
+    top = pd.concat(
+        [coeff_plot_df.head(10), coeff_plot_df.tail(10)]).feature.unique()
+    plot_df = coeff_plot_df[coeff_plot_df.feature.isin(top)]
 
-# select top / bottom features
-top = pd.concat(
-    [coeff_plot_df.head(10), coeff_plot_df.tail(10)]).feature.unique()
-plot_df = coeff_plot_df[coeff_plot_df.feature.isin(top)]
+    fig, ax = plt.subplots(figsize=(10, 16))
+    ax = sb.barplot(x="coeff",
+                    y="feature",
+                    hue="class",
+                    hue_order=sorted(y_classes),
+                    palette="Set2",
+                    data=plot_df)
+else:
+    # get linear SVC feature coefficients
+    coeff_plot_df = pd.DataFrame(selector.estimator_.coef_.T,
+                                 index=ANOVA_selected)
+    # keep only supported features
+    coeff_plot_df["support"] = selector.get_support()
+    coeff_plot_df = coeff_plot_df[coeff_plot_df["support"] == True]
+    coeff_plot_df = coeff_plot_df.stack().reset_index()
+    coeff_plot_df.columns = ["feature", "class", "coeff"]
+    coeff_plot_df = coeff_plot_df.sort_values("coeff")
+    print(coeff_plot_df.head())
 
-fig, ax = plt.subplots(figsize=(10, 16))
-ax = sb.barplot(x="coeff",
-                y="feature",
-                hue="class",
-                hue_order=sorted(y_classes),
-                palette="Set2",
-                data=plot_df)
+    # select top / bottom features
+    top = pd.concat(
+        [coeff_plot_df.head(10), coeff_plot_df.tail(10)]).feature.unique()
+    plot_df = coeff_plot_df[coeff_plot_df.feature.isin(top)]
+
+    fig, ax = plt.subplots(figsize=(10, 16))
+    ax = sb.barplot(x="coeff",
+                    y="feature",
+                    palette="Set2",
+                    data=plot_df)
 st = fig.suptitle(printout, y=.95, fontsize=18)
 fig.tight_layout
 fig.savefig(snakemake.output.loadings_fig,
