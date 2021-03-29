@@ -1,5 +1,9 @@
-BIOINFO_ROOT : '/home/umberto.perron/snaketree'
-PRJ_ROOT : '/home/umberto.perron/snaketree/prj/PDx_OmicsIntegration'
-VERSION : '1'
-DATA_DIR : '/local/share/data'
-SRC : '../../local/src'
+BIOINFO_ROOT: "/home/umberto.perron/snaketree"
+PRJ_ROOT: "/home/umberto.perron/snaketree/prj/PDx_OmicsIntegration"
+VERSION: "1"
+DATA_DIR: "/local/share/data"
+SRC: "../../local/src"
+TEST_SIZE: .3
+TARGET_COL: "Cetuximab Standard 3wks"
+CLASS_LABELS: ["OR", "SD", "PD"]
+CLASS_BINS: [-50, 35]

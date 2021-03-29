@@ -15,10 +15,10 @@ rule trainTest_split:
     output:
         response_tab = "DrugResponse_LMXfirslevel_trainTest.tsv"
     params:
-        testSize = .3,
-        target_col = "Cetuximab Standard 3wks",
-        class_labels = ["OR", "SD", "PD"],
-        class_bins = [np.NINF, -50, 35, np.Infinity]
+        testSize = config['TEST_SIZE'],
+        target_col = config['TARGET_COL'],
+        class_labels = config['CLASS_LABELS'],
+        class_bins = config['CLASS_BINS']
     script:
         srcdir+"/1_PDx_drug_response_preTrainTest.py"
 

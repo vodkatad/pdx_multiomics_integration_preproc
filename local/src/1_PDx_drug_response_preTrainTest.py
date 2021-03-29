@@ -41,12 +41,13 @@ drug_response_data = pd.merge(id_data,
 drug_response_data = drug_response_data[~drug_response_data.Cetuximab_Standard_3wks.isna(
 )]
 
+bins = [np.NINF] + snakemake.params.class_bins + [np.Infinity]
 # encode target variable
 # Objective Response, Progressive Disease, Stable Disease
 target_col_cat = target_col_join+"_cat"
 drug_response_data[target_col_cat] = pd.cut(
     drug_response_data[target_col_join],
-    bins=snakemake.params.class_bins,
+    bins=bins,
     labels=snakemake.params.class_labels)
 
 # train/test split
