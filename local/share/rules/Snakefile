@@ -186,7 +186,10 @@ rule train_DIABLO:
     threads: 8    
     params:
         target_col = "Cetuximab_Standard_3wks_cat",
-        max_ncomp = 4
+        max_ncomp = 4,
+        minfeatures = config['DIABLO_MINFEATURES'],
+        maxfeatures = config['DIABLO_MAXFEATURES'],
+        step = config['DIABLO_STEP']
     script:
          srcdir+"/DIABLO_integrated_model.R"
 

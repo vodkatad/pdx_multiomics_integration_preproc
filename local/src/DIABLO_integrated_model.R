@@ -69,10 +69,14 @@ print("plot ncompBER")
 
 # tune the model on the train set
 # optimise the number of features for each 'omic, component
-test.keepX=list("expr"=c(seq(5, 30, 10)),
-                "mut"=c(seq(5, ncol(mut), 5)),
-               "meth"=c(seq(5, 30, 10)),
-                "cnv"=c(seq(5, 30, 10)))
+minfeatures<-snakemake@params[["minfeatures"]]
+maxfeatures<-snakemake@params[["maxfeatures"]]
+step<-snakemake@params[["step"]]
+nfeatures_seq<-c(seq(minfeatures, maxfeatures, step))
+test.keepX=list("expr"=nfeatures_seq,
+                "mut"=c(seq(minfeatures, ncol(mut), step)),
+               "meth"=nfeatures_seq,
+                "cnv"=nfeatures_seq)
 max_ncomp<-snakemake@params[["max_ncomp"]]
 tune.omics=tune.block.splsda(X=data,
                              Y=Y,

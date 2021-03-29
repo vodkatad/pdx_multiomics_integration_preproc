@@ -5,8 +5,8 @@ DATA_DIR: "/local/share/data"
 SRC: "../../local/src"
 TEST_SIZE: .3
 TARGET_COL: "Cetuximab Standard 3wks"
-CLASS_LABELS: ["OR", "SD", "PD"]
-CLASS_BINS: [-50, 35]
+CLASS_LABELS: ["OR+SD", "PD"]
+CLASS_BINS: [35]
 DIABLO_MINFEATURES: 5
 DIABLO_MAXFEATURES: 30
 DIABLO_STEP: 10
