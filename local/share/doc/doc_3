@@ -1,0 +1,4 @@
+Version 3 uses a stacking classifier architecture (http://rasbt.github.io/mlxtend/user_guide/classifier/StackingClassifier/) where the level 1 classifiers are 4 RF classifiers (one per 'omic) and the meta classifier is a LR model.
+This model is trained to predict the PDxs' Cetuximab response at 3w in terms of tumour growth (%) as a binary classification problem.
+A PDx can either be a good Cetuximab responser (Stable Disease, Objective Response) or a poor responder (Progressive Disease).
+This piepeline uses independent feature selection for each 'omic with an univariate (T-test stat) or importance-based (tree embedings) strategy.
