@@ -13,7 +13,13 @@ import matplotlib.pyplot as plt
 import matplotlib
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import LinearSVC, SVC
-from sklearn.metrics import roc_curve, multilabel_confusion_matrix, auc, matthews_corrcoef, roc_auc_score, accuracy_score
+from sklearn.metrics import multilabel_confusion_matrix, matthews_corrcoef, confusion_matrix, accuracy_score
+# feature selection
+from sklearn.feature_selection import SelectFromModel
+from sklearn.feature_selection import VarianceThreshold
+from sklearn.feature_selection import SelectPercentile, f_classif, chi2
+
+
 # Options for pandas
 # No warnings about setting value on copy of slice
 pd.options.mode.chained_assignment = None
@@ -71,12 +77,7 @@ features_in = pd.concat([features_in, df1], axis=1)
 # clean features
 features_col = np.array([c for c in features_in.columns if c != target_col])
 features_clean = features_in[features_col]
-# remove features with 0 variance
-features_clean = features_clean[(features_clean.var(axis=0) > 0).index]
-# remove colinear features
-features_clean = remove_collinear_features(features_clean[features_col],
-                                           snakemake.params.colinear_trsh,
-                                           logfile=snakemake.log[0])
+
 # add some known driver mutation combos for CRC
 features_clean["KRAS-BRAF-NRAS_triple_neg"] = features_in[["KRAS",
                                                            "BRAF",
@@ -98,12 +99,32 @@ y_train = features_clean.loc[train_models, target_col]
 X_test = features_clean.loc[test_models, features_col]
 y_test = features_clean.loc[test_models, target_col]
 
+# remove features with low variance
+var_thrs = snakemake.params.var_thrs
+var_thrs_float = float(var_thrs[:-1])/100
+thresholder = VarianceThreshold(threshold=(
+    var_thrs_float * (1 - var_thrs_float)))
+features_tokeep = X_train.columns[thresholder.fit(X_train).get_support()]
+X_train = X_train[features_tokeep]
+X_test = X_test[features_tokeep]
+print(len(features_tokeep))
+# univariate feature selection via ANOVA f-value filter
+ANOVA_pctl = snakemake.params.ANOVA_pctl
+ANOVA_support = SelectPercentile(chi2,
+                                 percentile=ANOVA_pctl).\
+    fit(X_train, y_train).get_support()
+ANOVA_selected = X_train.columns[ANOVA_support]
+print(len(ANOVA_selected))
+# transform train, test datasets
+X_train = X_train[ANOVA_selected]
+X_test = X_test[ANOVA_selected]
+
 # standardise features
 X_train = pd.DataFrame(StandardScaler().fit_transform(X_train.values),
-                       columns=features_col,
+                       columns=ANOVA_selected,
                        index=train_models)
 X_test = pd.DataFrame(StandardScaler().fit_transform(X_test.values),
-                      columns=features_col,
+                      columns=ANOVA_selected,
                       index=test_models)
 
 # save to file
@@ -121,8 +142,14 @@ svm = LinearSVC().fit(X_train, Y_train)
 y_classes = features_clean[target_col].unique().tolist()
 Y_pred = svm.predict(X_test)
 
-multi_cm = multilabel_confusion_matrix(Y_test, Y_pred, labels=y_classes)
-tn, fp, fn, tp = [i for i in sum(multi_cm).ravel()]
+# if multiclass predictor
+if len(svm.classes_) > 2:
+    cm = multilabel_confusion_matrix(Y_test, Y_pred, labels=y_classes)
+    tn, fp, fn, tp = [i for i in sum(cm).ravel()]
+else:
+    cm = confusion_matrix(Y_test, Y_pred)
+    tn, fp, fn, tp = cm.ravel()
+
 accuracy = tp + tn / (tp + fp + fn + tn)
 precision = tp / (tp + fp)
 recall = tp / (tp + fn)
@@ -136,25 +163,44 @@ printout = f"Model: LinearSVC |\
      F1: {F1:.4f} | \
      Accu: {accuracy:.4f}"
 
+# if multiclass
+if len(svm.classes_) > 2:
+    # get linear SVC feature coefficients
+    coeff_plot_df = pd.DataFrame(svm.coef_.T,
+                                 columns=svm.classes_,
+                                 index=features_col)
+    coeff_plot_df = coeff_plot_df.stack().reset_index()
+    coeff_plot_df.columns = ["feature", "class", "coeff"]
+    coeff_plot_df = coeff_plot_df.sort_values("coeff")
+    # select top / bottom features
+    top = pd.concat(
+        [coeff_plot_df.head(10), coeff_plot_df.tail(10)]).feature.unique()
+    plot_df = coeff_plot_df[coeff_plot_df.feature.isin(top)]
 
-# get linear SVC feature coefficients
-coeff_plot_df = pd.DataFrame(svm.coef_.T,
-                             columns=svm.classes_,
-                             index=features_col)
-coeff_plot_df = coeff_plot_df.stack().reset_index()
-coeff_plot_df.columns = ["feature", "class", "coeff"]
-coeff_plot_df = coeff_plot_df.sort_values("coeff")
-# select top / bottom features
-top = pd.concat(
-    [coeff_plot_df.head(10), coeff_plot_df.tail(10)]).feature.unique()
-plot_df = coeff_plot_df[coeff_plot_df.feature.isin(top)]
+    fig, ax = plt.subplots(figsize=(10, 16))
+    ax = sb.barplot(x="coeff",
+                    y="feature",
+                    hue="class",
+                    palette="Set2",
+                    data=plot_df)
+else:
+    # get linear SVC feature coefficients
+    coeff_plot_df = pd.DataFrame(svm.coef_.T,
+                                 index=ANOVA_selected)
+    coeff_plot_df = coeff_plot_df.stack().reset_index()
+    coeff_plot_df.columns = ["feature", "class", "coeff"]
+    coeff_plot_df = coeff_plot_df.sort_values("coeff")
+    # select top / bottom features
+    top = pd.concat(
+        [coeff_plot_df.head(15), coeff_plot_df.tail(15)]).feature.unique()
+    plot_df = coeff_plot_df[coeff_plot_df.feature.isin(top)]
 
-fig, ax = plt.subplots(figsize=(10, 16))
-ax = sb.barplot(x="coeff",
-                y="feature",
-                hue="class",
-                palette="Set2",
-                data=plot_df)
+    fig, ax = plt.subplots(figsize=(10, 16))
+    ax = sb.barplot(x="coeff",
+                    y="feature",
+                    palette="Set2",
+                    data=plot_df)
+
 st = fig.suptitle(printout, y=.95, fontsize=18)
 fig.tight_layout
 fig.savefig(snakemake.output.loadings_fig,

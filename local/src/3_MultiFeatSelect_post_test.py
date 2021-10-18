@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 # coding: utf-8
 # Data manipulation
+from sklearn.preprocessing import StandardScaler
 import pandas as pd
 import numpy as np
 
 # Options for pandas
 # No warnings about setting value on copy of slice
 pd.options.mode.chained_assignment = None
+
 
 # load train set for each omic
 Meth_test = pd.read_csv(snakemake.input.meth_Xtest,
@@ -48,6 +50,11 @@ feature_col = [c for c in all_df.columns if c != target_col]
 # fillna in features with median imputation
 all_df[feature_col] = all_df[feature_col].apply(
     lambda col: col.fillna(col.median()))
+# re-stanardise all features together (including binary features)
+all_df[feature_col] = pd.DataFrame(StandardScaler().
+                                   fit_transform(all_df[feature_col].values),
+                                   columns=feature_col,
+                                   index=all_df.index)
 # drop duplicated instances (ircc_id) from index
 all_df = all_df[~all_df.index.duplicated(keep='first')]
 

@@ -78,7 +78,8 @@ rule mutVAF_FeatClean:
         Xtest = "PDx_mutVAF_FeatSelect_Xtest.tsv",
         loadings_fig = "PDx_mutVAF_FeatSelect_loadings_barplot.pdf"
     params:
-        colinear_trsh = .7,
+        var_thrs = "99%", # remove binary features w/t low variability (> var_thrs)
+        ANOVA_pctl = 50, 
         target_col = "Cetuximab_Standard_3wks_cat"
     log: "mutVAF_FeatClean.log"
     script:
