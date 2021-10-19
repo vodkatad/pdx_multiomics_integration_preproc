@@ -6,7 +6,7 @@
 # Data manipulation
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedShuffleSplit
 
 # Options for pandas
 # No warnings about setting value on copy of slice
@@ -38,12 +38,14 @@ drug_response_data = pd.merge(id_data,
                               drug_response_data[[
                                   target_col_join, "ircc_id_short"]],
                               on="ircc_id_short")
-# drop moels w/t missing target variable value
+# drop models w/t missing target variable value
 drug_response_data = drug_response_data[~drug_response_data.Cetuximab_Standard_3wks.isna(
 )]
 
-# encode target variable
-# Progressive Disease, Stable Disease-Objective Response
+# encode the continuous target variable (tumour growth uoun treatment)
+# as a binary var with two states: 
+# Progressive Disease and
+# Stable Disease-Objective Response
 bins = [np.NINF] + snakemake.params.class_bins + [np.Infinity]
 target_col_cat = target_col_join+"_cat"
 drug_response_data[target_col_cat] = pd.cut(
@@ -51,11 +53,18 @@ drug_response_data[target_col_cat] = pd.cut(
     bins=bins,
     labels=snakemake.params.class_labels)
 
-# train/test split (stratified)
+# generate train/test split shuffle (stratified) replicates
+# returns stratified randomized folds preserving 
+# the percentage of samples for each class.
 test_size = float(snakemake.params.testSize)
-labels = drug_response_data[target_col_cat].values
+n_splits = float(snakemake.params.n_splits) 
+labels = drug_response_data[target_col_cat]
 all_models = drug_response_data.ircc_id.unique()
-train_models, test_models = train_test_split(
-    all_models, test_size=test_size, stratify=labels)
-drug_response_data["is_test"] = drug_response_data["ircc_id"].isin(test_models)
-drug_response_data.to_csv(snakemake.output.response_tab, sep="\t", index=None)
+sss = StratifiedShuffleSplit(n_splits=10, test_size=.3, random_state=13)
+for duo, outfile in zip(sss.split(all_models, labels), snakemake.output):
+    out_df = drug_response_data.copy() 
+    train_index, test_index = duo
+    train_models = all_models[train_index]
+    test_models = all_models[test_index] 
+    out_df["is_test"] = out_df["ircc_id"].isin(test_models)
+    out_df.to_csv(outfile, sep="\t", index=None)

@@ -1,14 +1,15 @@
 BIOINFO_ROOT: "../../../../"
 PRJ_ROOT: "../../../../prj/PDx_OmicsIntegration"
-VERSION: "1"
+VERSION: "4"
 DATA_DIR: "/local/share/data"
-SRC: "../../local/src"
+SRC: "../../local/src/4_McNemar_PDX"
 TEST_SIZE: .3
 TARGET_COL: "Cetuximab Standard 3wks"
 FULL_CLASS_LABELS:
   ["Objective Response or Stable Disease", "Progressive Disease (>35%)"]
 CLASS_LABELS: ["OR+SD", "PD"]
 CLASS_BINS: [35]
+N_SPLITS : 10
 DIABLO_MINFEATURES: 4
 DIABLO_MAXFEATURES: 10
 DIABLO_STEP: 2

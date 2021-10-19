@@ -2,17 +2,22 @@
 configfile: './config'
 datadir = config["PRJ_ROOT"] + config["DATA_DIR"]
 srcdir = config["SRC"]
+n_splits = int(config['N_SPLITS'])
+split_indeces = [str(i) for i in range(n_splits)]
 
 # map different PDx model ids
-# merge drug response data, select target
-# split samples in train/test set
+# merge drug response data, encode target variable
+# split samples in train/test sets (stratified)
 rule trainTest_split:
     input:
         ids = datadir+"/mapping_sanger_ID_genealogy_long.tsv",
         drug = datadir + "/drug_response/Treatments_Eugy_Ele_fix0cetuxi_201005.tsv"
     output:
-        response_tab = protected("DrugResponse_LMXfirslevel_trainTest.tsv")
+        protected(expand("DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv", 
+            suffix=split_indeces))
+        #response_tab = protected("DrugResponse_LMXfirslevel_trainTest.tsv")
     params:
+        n_splits = config['N_SPLITS'],
         testSize = config['TEST_SIZE'],
         target_col = config['TARGET_COL'],
         class_labels = config['CLASS_LABELS'],
@@ -20,101 +25,101 @@ rule trainTest_split:
     script:
         srcdir+"/1_PDx_drug_response_preTrainTest.py"
 
-# copy number feature preprocessing
-rule CN_FeatClean:
-    input:
-        response = rules.trainTest_split.output.response_tab,
-        cnv = datadir + "/CNA_annotation/our_cn_genes2_CNVkitREDO_25012021.tsv",
-        targeted = datadir + "/targeted_intogen_common_geneset.tsv",
-        TCGA_CNV = datadir + "/TCGA_COADREAD_02092020_maskedCNS_intogen_admire-gistic_genewise_CNV_mapToGene.tsv"
-    output:
-        preproc_CNV = "preproc_CNV.tsv"
-    params:
-        target_col = "Cetuximab_Standard_3wks_cat"
-    script:
-        srcdir+"3/1_PDx_CN_GeneWise_CNVkitREDO_MultiFeatSel.py"
+## copy number feature preprocessing
+#rule CN_FeatClean:
+    #input:
+        #response = rules.trainTest_split.output.response_tab,
+        #cnv = datadir + "/CNA_annotation/our_cn_genes2_CNVkitREDO_25012021.tsv",
+        #targeted = datadir + "/targeted_intogen_common_geneset.tsv",
+        #TCGA_CNV = datadir + "/TCGA_COADREAD_02092020_maskedCNS_intogen_admire-gistic_genewise_CNV_mapToGene.tsv"
+    #output:
+        #preproc_CNV = "preproc_CNV.tsv"
+    #params:
+        #target_col = "Cetuximab_Standard_3wks_cat"
+    #script:
+        #srcdir+"3/1_PDx_CN_GeneWise_CNVkitREDO_MultiFeatSel.py"
 
-# mutation data feature preprocessing
-rule mut_FeatClean:
-    input:
-        response = rules.trainTest_split.output.response_tab,
-        mut = datadir+"/Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt"
-    output:
-        preproc_mut = "preproc_mut.tsv"
-    params:
-        target_col = "Cetuximab_Standard_3wks_cat",
-        univ_ptl = "75%" # select top Kth features for combos
-    script:
-        srcdir+"/3/1_mut_featureEngineering.py"
+## mutation data feature preprocessing
+#rule mut_FeatClean:
+    #input:
+        #response = rules.trainTest_split.output.response_tab,
+        #mut = datadir+"/Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt"
+    #output:
+        #preproc_mut = "preproc_mut.tsv"
+    #params:
+        #target_col = "Cetuximab_Standard_3wks_cat",
+        #univ_ptl = "75%" # select top Kth features for combos
+    #script:
+        #srcdir+"/3/1_mut_featureEngineering.py"
 
-# preprocessing variance stabilised expression data
-rule expr_FeatCleanSelect:
-    input:
-        response = rules.trainTest_split.output.response_tab,
-        expr = datadir+"/RNAseq/release_2/selected_matrix.tsv"
-    output:
-        preproc_expr = "preproc_expr.tsv" 
-    params:
-        target_col = "Cetuximab_Standard_3wks_cat",
-    script:
-        srcdir+"/3/1_PDx_DrugResponse_geneExpr_MultiFeatSelect.py"
+## preprocessing variance stabilised expression data
+#rule expr_FeatCleanSelect:
+    #input:
+        #response = rules.trainTest_split.output.response_tab,
+        #expr = datadir+"/RNAseq/release_2/selected_matrix.tsv"
+    #output:
+        #preproc_expr = "preproc_expr.tsv" 
+    #params:
+        #target_col = "Cetuximab_Standard_3wks_cat",
+    #script:
+        #srcdir+"/3/1_PDx_DrugResponse_geneExpr_MultiFeatSelect.py"
 
-# preprocessing  methylation (B) data
-rule meth_FeatCleanSelect:
-    input:
-        response = rules.trainTest_split.output.response_tab,
-        meth_m = datadir + "/methylation/m_values_Umberto.hdf5",
-        meth_B_DTpval = datadir + "/methylation/beta_DT-pvalue_Xeno.tsv",
-        meth_m_sd = datadir + "/methylation/m_sdvalue.tsv",
-        meth_bestSDs = datadir + "/methylation/collapsed_ALLprobes.bestSDs.tsv"
-    output:
-        preproc_meth = "preproc_meth.tsv"
-    params:
-        target_col = "Cetuximab_Standard_3wks_cat",
-        binomial_FDR_thrs = .05
-    script:
-        srcdir+"/3/1_PDx_Meth_probeEng.py"
+## preprocessing  methylation (B) data
+#rule meth_FeatCleanSelect:
+    #input:
+        #response = rules.trainTest_split.output.response_tab,
+        #meth_m = datadir + "/methylation/m_values_Umberto.hdf5",
+        #meth_B_DTpval = datadir + "/methylation/beta_DT-pvalue_Xeno.tsv",
+        #meth_m_sd = datadir + "/methylation/m_sdvalue.tsv",
+        #meth_bestSDs = datadir + "/methylation/collapsed_ALLprobes.bestSDs.tsv"
+    #output:
+        #preproc_meth = "preproc_meth.tsv"
+    #params:
+        #target_col = "Cetuximab_Standard_3wks_cat",
+        #binomial_FDR_thrs = .05
+    #script:
+        #srcdir+"/3/1_PDx_Meth_probeEng.py"
 
-# enforce consistency, normalise, train stacked model
-rule train_model:
-    input:
-        response = ancient(rules.trainTest_split.output.response_tab),
-        meth = ancient(rules.meth_FeatCleanSelect.output.preproc_meth),
-        expr = ancient(rules.expr_FeatCleanSelect.output.preproc_expr),
-        cnv = ancient(rules.CN_FeatClean.output.preproc_CNV),
-        mut = ancient(rules.mut_FeatClean.output.preproc_mut)
-    output:
-        model = protected("stacked_Omics_binary_MultiCVclassifier.pkl")
-    params:
-        target_col = "Cetuximab_Standard_3wks_cat"
-    threads: 8
-    log:
-        grid = "train_model_grid.log",
-        bestClassifier = "train_model_bestClassifier.log"
-    script:
-       srcdir+"/3/2_OMICS_stacking_binary_mutEng.py"
+## enforce consistency, normalise, train stacked model
+#rule train_model:
+    #input:
+        #response = ancient(rules.trainTest_split.output.response_tab),
+        #meth = ancient(rules.meth_FeatCleanSelect.output.preproc_meth),
+        #expr = ancient(rules.expr_FeatCleanSelect.output.preproc_expr),
+        #cnv = ancient(rules.CN_FeatClean.output.preproc_CNV),
+        #mut = ancient(rules.mut_FeatClean.output.preproc_mut)
+    #output:
+        #model = protected("stacked_Omics_binary_MultiCVclassifier.pkl")
+    #params:
+        #target_col = "Cetuximab_Standard_3wks_cat"
+    #threads: 8
+    #log:
+        #grid = "train_model_grid.log",
+        #bestClassifier = "train_model_bestClassifier.log"
+    #script:
+       #srcdir+"/3/2_OMICS_stacking_binary_mutEng.py"
 
-# validate, analyse, explain trained stacked model
-rule analyse_model:
-    input:
-        model = ancient(rules.train_model.output.model),
-        response = ancient(rules.trainTest_split.output.response_tab),
-        meth = ancient(rules.meth_FeatCleanSelect.output.preproc_meth),
-        expr = ancient(rules.expr_FeatCleanSelect.output.preproc_expr),
-        cnv = ancient(rules.CN_FeatClean.output.preproc_CNV),
-        mut = ancient(rules.mut_FeatClean.output.preproc_mut)
-    output:
-        test_report = "test_ClassifReport.tsv",
-        test_pred_proba = "test_PredMarginalProba.tsv", 
-        test_pred_proba_plot = "test_PredMarginalProba_barplot.pdf",
-        auc_plot = "test_AUC.pdf",
-        meta_coeff_plot = "metaClassif_coeff_barplot.pdf",
-        lv1_importance_plot = "lv1Classif_importance_barplot.pdf",
-        feature_corr_plot = "lv1Feature_clusterplot.pdf",
-        confusion_matrix_plot = "test_ConfusionMatrix_heatmap.pdf",
-        test_pred_tab = "test_PredTable.tsv",
-        explain_plot_dir = directory("explain_model_figures")
-    params:
-        target_col = "Cetuximab_Standard_3wks_cat"
-    script:
-       srcdir+"/3/3_OMICS_stacking_binary_mutEng_ModelAnalysis.py" 
+## validate, analyse, explain trained stacked model
+#rule analyse_model:
+    #input:
+        #model = ancient(rules.train_model.output.model),
+        #response = ancient(rules.trainTest_split.output.response_tab),
+        #meth = ancient(rules.meth_FeatCleanSelect.output.preproc_meth),
+        #expr = ancient(rules.expr_FeatCleanSelect.output.preproc_expr),
+        #cnv = ancient(rules.CN_FeatClean.output.preproc_CNV),
+        #mut = ancient(rules.mut_FeatClean.output.preproc_mut)
+    #output:
+        #test_report = "test_ClassifReport.tsv",
+        #test_pred_proba = "test_PredMarginalProba.tsv", 
+        #test_pred_proba_plot = "test_PredMarginalProba_barplot.pdf",
+        #auc_plot = "test_AUC.pdf",
+        #meta_coeff_plot = "metaClassif_coeff_barplot.pdf",
+        #lv1_importance_plot = "lv1Classif_importance_barplot.pdf",
+        #feature_corr_plot = "lv1Feature_clusterplot.pdf",
+        #confusion_matrix_plot = "test_ConfusionMatrix_heatmap.pdf",
+        #test_pred_tab = "test_PredTable.tsv",
+        #explain_plot_dir = directory("explain_model_figures")
+    #params:
+        #target_col = "Cetuximab_Standard_3wks_cat"
+    #script:
+       #srcdir+"/3/3_OMICS_stacking_binary_mutEng_ModelAnalysis.py" 
