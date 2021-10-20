@@ -88,18 +88,21 @@ in_df = pd.merge(in_df,
                             sort_values("ircc_id").set_index("ircc_id")
 
 in_df['event_name'] = in_df.gene_HUGO_id.astype(str) + "_" + in_df.gene_direction.astype(str)
-lo2R_matrix = in_df[['log2R', 'event_name']].    reset_index().set_index(["ircc_id", "event_name"]).unstack().dropna(how='all')
+lo2R_matrix = in_df[['log2R', 'event_name']].reset_index().\
+    set_index(["ircc_id", "event_name"]).unstack().dropna(how='all')
 
 # encode gene_dir as binary features,
 # account for multiple CNV events for each sample
 CNV_matrix = pd.get_dummies(in_df['event_name']).reset_index().groupby("ircc_id").sum()
 
+# as a baseline 'instability' score simply count the number of "Gain" and "Loss" events per sample
+CNV_matrix['CN_event_count'] = CNV_matrix.sum(axis=1)
+
 # load drug response data 
-ctx3w_cat = drug_response_data[["ircc_id", target_col]].    set_index("ircc_id")
+ctx3w_cat = drug_response_data[["ircc_id", target_col]].set_index("ircc_id")
 # encode target col
 Y_class_dict={'PD':0,'SD':1, 'OR':1}
 ctx3w_cat[target_col] = ctx3w_cat[target_col].replace(Y_class_dict)
-
 
 feature_col = CNV_matrix.columns
 features_in = pd.merge(ctx3w_cat, CNV_matrix, 
@@ -107,7 +110,7 @@ features_in = pd.merge(ctx3w_cat, CNV_matrix,
 # replace na w/t 0
 features_in = features_in.fillna(0)
 # drop instances w/t missing target 
-features_in = features_in[~features_in[target_col].isna()].    drop_duplicates()
+features_in = features_in[~features_in[target_col].isna()].drop_duplicates()
 features_in.to_csv(snakemake.output.preproc_CNV,
                    sep='\t')
 
