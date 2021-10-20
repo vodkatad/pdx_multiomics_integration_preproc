@@ -27,7 +27,7 @@ rule trainTest_split:
         srcdir+"/1_PDx_drug_response_preTrainTest.py"
 
 # copy number data preprocessing, feature engineering
-# these gain/loss thresholdsare fairly conservative for PDXs (low impurity)
+# these gain/loss thresholds are fairly conservative for PDXs (low impurity)
 # for high gain: ~.5 = 1 copy gain, ~1 = 2 copy gain
 rule CN_FeatPreproc:
     input:
@@ -42,7 +42,20 @@ rule CN_FeatPreproc:
         loss_thr = -.2, 
         gain_thr = .1,
         high_gain_thr = .75
-    threads: 1  
     script:
         srcdir+"/2c_PDx_CN_GeneWise_CNVkitREDO_highCN_agglomeration.py"
 
+
+# mutation data feature preprocessing
+# & feature crosses for top chi2 features
+rule mut_FeatClean:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+        mut = datadir+"/Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt"
+    output:
+        preproc_mut = "preproc_mut" + "{suffix}" + ".tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        univ_ptl = "75%" # select top Kth features for combos
+    script:
+        srcdir+"/2b_mut_featureEngineering.ipynb"
