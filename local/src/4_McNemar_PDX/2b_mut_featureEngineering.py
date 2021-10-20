@@ -13,15 +13,19 @@ import numpy as np
 # feature selection
 from itertools import combinations
 from sklearn.preprocessing import MinMaxScaler
-from sklearn.feature_selection import chi
+from sklearn.feature_selection import chi2
 
 
 # Load input files
 
 # load sample id conversion table, drug response data
-drug_response_data = pd.read_csv(snakemake.input.response, sep="\t")
+f = snakemake.input.response
+#f = "../../../dataset/4_McNemar_PDX/DrugResponse_LMXfirslevel_trainTest8.tsv"
+drug_response_data = pd.read_csv(f, sep="\t")
 # load driver annotation for PDx models
-driver_data = pd.read_csv(snakemake.input.mut,
+f = snakemake.input.mut
+#f = "../../../local/share/data//Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt"
+driver_data = pd.read_csv(f,
                           "\t", header=0).rename(
                               columns={'Sample': 'sanger_id'})
 # + driver annot data
@@ -43,28 +47,29 @@ features_in["ircc_id"] = features_pre.ircc_id
 features_in = features_in.groupby("ircc_id").sum()
 
 # encode target variable to binary
-target_col = snakemake.params.target_col
-Mut = features_in
-Y = drug_response_data
-Y_class_dict = {'PD': 0, 'SD': 1, 'OR': 1}
+#target_col = snakemake.params.target_col
+target_col = "Cetuximab_Standard_3wks_cat"
+Y = drug_response_data.set_index('ircc_id')
+Y_class_dict = {'PD': 0, 'OR+SD': 1}
 Y[target_col] = Y[target_col].replace(Y_class_dict)
 # merge features and target, remove instances w/t missing target value
-feature_col = Mut.columns
-all_df = pd.merge(Mut, Y[target_col], right_index=True,
+feature_col = features_in.columns
+all_df = pd.merge(features_in, Y[target_col], right_index=True,
                   left_index=True, how="right")
 all_df = all_df.dropna(axis=0, how='all')
+
 # fillna in features with 0
-all_df[feature_col] = all_df.fillna(0)
+all_df = all_df.fillna(0)
 # drop duplicated instances (ircc_id) from index
 all_df = all_df[~all_df.index.duplicated(keep='first')]
 
 # train-test split
 train_models = Y[Y.is_test == False].index.unique()
 test_models = Y[Y.is_test == True].index.unique()
-X_train = all_df.loc[train_models, feature_col].values
-y_train = all_df.loc[train_models, target_col].values
-X_test = all_df.loc[test_models, feature_col].values
-y_test = all_df.loc[test_models, target_col].values
+X_train = all_df.loc[train_models, feature_col]
+y_train = all_df.loc[train_models, target_col]
+X_test = all_df.loc[test_models, feature_col]
+y_test = all_df.loc[test_models, target_col]
 
 ## Feature engineering
 
