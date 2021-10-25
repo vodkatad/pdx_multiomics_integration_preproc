@@ -115,18 +115,24 @@ rule calc_progeny:
         progeny_train = "progeny_train" + "{suffix}" + ".tsv",
         progeny_test = "progeny_test" + "{suffix}" + ".tsv" 
     script:
-        "../../local/src/4_McNemar_PDX/progeny_SamplePathActivity.R"
+       srcdir+"/progeny_SamplePathActivity.R"
 
 
-# preprocess ssGSEA Hallmarks and PROGENy scores computed on
-# variance stabilised expression
+## preprocess ssGSEA Hallmarks and PROGENy scores computed on
+## variance stabilised expression
 rule expr_FeatPreproc:
     input:
         response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
-        expr = datadir+"/RNAseq/release_2/selected_matrix.tsv"
+        progeny_train = "progeny_train"+"{suffix}"+".tsv",
+        progeny_test = "progeny_test"+"{suffix}"+".tsv", 
+        hallmarks_train = datadir+"/ssGSEA_10fold/"+"{suffix}"+"_LMXfirstlevel_train_h-scores.tsv",
+        hallmarks_test = datadir+"/ssGSEA_10fold/"+"{suffix}"+"_LMXfirstlevel_test_h-scores.tsv"
     output:
-        preproc_expr = "preproc_expr.tsv" + "{suffix}" + ".tsv"
+        preproc_expr = "preproc_expr"+"{suffix}"+".tsv"
     params:
         target_col = "Cetuximab_Standard_3wks_cat",
+        corr_thrs = .7
+    log:
+        "expr_featureEng{suffix}.log"
     script:
         srcdir+"/2d_PDx_DrugResponse_geneExpr_encodeHALLMARK+PROGENy.py"
