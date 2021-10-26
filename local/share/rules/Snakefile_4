@@ -136,3 +136,27 @@ rule expr_FeatPreproc:
         "expr_featureEng{suffix}.log"
     script:
         srcdir+"/2d_PDx_DrugResponse_geneExpr_encodeHALLMARK+PROGENy.py"
+
+# preprocessing on pre-clusterd (K=5) methylation probes data
+rule meth_FeatPreproc:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+        meth_K5 = datadir + "/methylation/k5_samples-clusters_division.tsv"
+    output:
+        preproc_meth = "preproc_meth"+"{suffix}"+".tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    script:
+        srcdir+"/2e_PDx_Meth_probeK5Cluster.py"
+
+# preprocessing on clinical data
+rule clin_FeatPreproc:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+        clin_K5 = datadir + ""
+    output:
+        preproc_clin = "preproc_clin"+"{suffix}"+".tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    script:
+        srcdir+"/2e_PDx_Meth_probeK5Cluster.py"
