@@ -153,10 +153,11 @@ rule meth_FeatPreproc:
 rule clin_FeatPreproc:
     input:
         response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
-        clin_K5 = datadir + ""
+        clin_data = datadir + "/clinical/DateCliniche_20170922.xlsx",
+        site_annot =  datadir + "/clinical/Site_annotations_LMX.tsv"
     output:
         preproc_clin = "preproc_clin"+"{suffix}"+".tsv"
     params:
         target_col = "Cetuximab_Standard_3wks_cat"
     script:
-        srcdir+"/2e_PDx_Meth_probeK5Cluster.py"
+        srcdir+"/2a_clinical_data.py"
