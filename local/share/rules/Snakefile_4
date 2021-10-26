@@ -137,7 +137,7 @@ rule expr_FeatPreproc:
     script:
         srcdir+"/2d_PDx_DrugResponse_geneExpr_encodeHALLMARK+PROGENy.py"
 
-# preprocessing on pre-clusterd (K=5) methylation probes data
+# preprocess pre-clusterd (K=5) methylation probes data
 rule meth_FeatPreproc:
     input:
         response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
@@ -149,7 +149,7 @@ rule meth_FeatPreproc:
     script:
         srcdir+"/2e_PDx_Meth_probeK5Cluster.py"
 
-# preprocessing on clinical data
+# clean, preprocess on clinical data (origin patient)
 rule clin_FeatPreproc:
     input:
         response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
@@ -161,3 +161,20 @@ rule clin_FeatPreproc:
         target_col = "Cetuximab_Standard_3wks_cat"
     script:
         srcdir+"/2a_clinical_data.py"
+
+# stacked model training
+rule train_stacked:
+    input:
+        mut = "preproc_mut" + "{suffix}" + ".tsv",
+        cnv = "preproc_CNV" + "{suffix}" + ".tsv",
+        expr = "preproc_expr"+"{suffix}"+".tsv",
+        meth = "preproc_meth"+"{suffix}"+".tsv",
+        clin = "preproc_clin"+"{suffix}"+".tsv",
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv" 
+    output:
+        best_model = protected("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.pkl")
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    threads: 4
+    log: 
+    script:
