@@ -186,5 +186,38 @@ rule train_stacked:
 
 # establish a performance baseline 
 # using an early integration Elastic-Net penalised
-# Logistic regression on the same input as the stacked model
- 
+# logistic regression on the same input as the stacked model
+rule train_elasticnet:
+    input:
+        mut = "preproc_mut" + "{suffix}" + ".tsv",
+        cnv = "preproc_CNV" + "{suffix}" + ".tsv",
+        expr = "preproc_expr"+"{suffix}"+".tsv",
+        meth = "preproc_meth"+"{suffix}"+".tsv",
+        clin = "preproc_clin"+"{suffix}"+".tsv",
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv" 
+    output:
+        best_model = protected("OmicsBinary_elasticnet_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl")
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    threads: 4
+    log:  
+        "elasticnet_input{suffix}.log",
+        "elasticnet_fullTrain{suffix}.log",
+        "elasticnet_bestModelSummary{suffix}.log"
+    script:
+        srcdir + "/OMICS_elasticnet_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
+
+# use McNemar's Test to compare the predictive accuracy of two set of models replicates
+rule mcNemar_stackedVSelasticnet:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv", 
+        model_set1 = expand("OmicsBinary_elasticnet_mutCross+\
+        clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces),
+        model_set2 = expand("OmicsBinary_elasticnet_mutCross+\
+        clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces)
+    output:
+        "mcNemar_stackedVSelasticnet_tab.tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    script:
+         srcdir + "/mcNemar_test.py"
