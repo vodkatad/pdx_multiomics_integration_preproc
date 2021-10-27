@@ -29,6 +29,7 @@ rule trainTest_split:
 # copy number data preprocessing, feature engineering
 # these gain/loss thresholds are fairly conservative for PDXs (low impurity)
 # for high gain: ~.5 = 1 copy gain, ~1 = 2 copy gain
+# this outputs ~600 features which are then clustered (WardAgg) in the training pipeline
 rule CN_FeatPreproc:
     input:
         response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
@@ -162,7 +163,7 @@ rule clin_FeatPreproc:
     script:
         srcdir+"/2a_clinical_data.py"
 
-# stacked model training
+# stacked model training on the engineered feature dataset
 rule train_stacked:
     input:
         mut = "preproc_mut" + "{suffix}" + ".tsv",
@@ -172,9 +173,18 @@ rule train_stacked:
         clin = "preproc_clin"+"{suffix}"+".tsv",
         response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv" 
     output:
-        best_model = protected("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.pkl")
+        best_model = protected("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl")
     params:
         target_col = "Cetuximab_Standard_3wks_cat"
     threads: 4
-    log: 
+    log:  
+        "stacked_input{suffix}.log",
+        "stacked_fullTrain{suffix}.log",
+        "stacked_bestModelSummary{suffix}.log"
     script:
+        srcdir + "/OMICS_stacking_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
+
+# establish a performance baseline 
+# using an early integration Elastic-Net penalised
+# Logistic regression on the same input as the stacked model
+ 
