@@ -61,15 +61,12 @@ rule mut_FeatPreproc:
     script:
         srcdir+"/2b_mut_featureEngineering.py"
 
-
-# preprocess variance stabilised RNAseq expression
-rule expr_Preproc:
+rule expr_merge:
         input:
-            response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+            response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
             expr = datadir+"/RNAseq/release_2/selected_matrix.tsv"
         output:
-            expr_clean_train = temp("clean_expr_train"+"{suffix}"+".tsv"),
-            expr_clean_test = temp("clean_expr_test"+"{suffix}"+".tsv")
+            expr_merge = "expr_merge.tsv",
         params:
             target_col = "Cetuximab_Standard_3wks_cat"
         run:
@@ -78,7 +75,6 @@ rule expr_Preproc:
             # load sample id conversion table, drug response data
             target_col = params.target_col
             drug_response_data = pd.read_csv(input.response, sep="\t")
-            
 
             # load expression data from RNAseq
             # these are variance stabilized (vsd)
@@ -93,15 +89,36 @@ rule expr_Preproc:
             # to link the RNA id and the DNA id
             merge_matrix = pd.merge(rnaseq_matrix,
                                     drug_response_data[[
-                                        target_col, "ircc_id_short", "ircc_id",'is_test']],
-                                    on="ircc_id_short")
-            train_models =  merge_matrix[merge_matrix.is_test == False].ircc_id
-            test_models = merge_matrix[merge_matrix.is_test == True].ircc_id 
+                                        target_col, "ircc_id_short", "ircc_id"]],
+                                    on="ircc_id_short").set_index("ircc_id")
             # drop instances w/t missing target value
             merge_matrix = merge_matrix[~merge_matrix[target_col].isna()]
-            merge_matrix = merge_matrix.drop(["ircc_id_short", 
-                "is_test"], axis=1).\
-                set_index("ircc_id").drop_duplicates()
+            merge_matrix.to_csv(output.expr_merge, sep='\t')
+
+# preprocess variance stabilised RNAseq expression
+rule expr_Preproc:
+        input:
+            response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+            expr_merge = "expr_merge.tsv"
+        output:
+            expr_clean_train = "clean_expr_train"+"{suffix}"+".tsv",
+            expr_clean_test = "clean_expr_test"+"{suffix}"+".tsv"
+        params:
+            target_col = "Cetuximab_Standard_3wks_cat"
+        run:
+            import pandas as pd
+
+            # load sample id conversion table, drug response data
+            target_col = params.target_col
+            drug_response_data = pd.read_csv(input.response, sep="\t")
+            merge_matrix = pd.read_csv(input.expr_merge, sep='\t', index_col=0)
+            merge_matrix = merge_matrix.drop("ircc_id_short", axis=1).drop_duplicates()
+            # remove missing instances
+            drug_response_data = drug_response_data[drug_response_data.ircc_id.\
+            isin(merge_matrix.index)] 
+            # train/test sets specific to this replicate
+            train_models =  drug_response_data[drug_response_data.is_test == False].ircc_id
+            test_models = drug_response_data[drug_response_data.is_test == True].ircc_id 
             # transpose again for PROGENy, split train/test
             out_df = merge_matrix.T
             out_df[train_models].to_csv(output.expr_clean_train, sep="\t")
@@ -173,6 +190,10 @@ rule train_stacked:
         clin = "preproc_clin"+"{suffix}"+".tsv",
         response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv" 
     output:
+        X_train = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv",
+        X_test = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv",
+        Y_train = "OmicsBinary{suffix}_Ytrain.tsv",
+        Y_test = "OmicsBinary{suffix}_Ytest.tsv",
         best_model = protected("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl")
     params:
         target_col = "Cetuximab_Standard_3wks_cat"
@@ -207,17 +228,55 @@ rule train_elasticnet:
     script:
         srcdir + "/OMICS_elasticnet_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
 
-# use McNemar's Test to compare the predictive accuracy of two set of models replicates
-rule mcNemar_stackedVSelasticnet:
-    input:
-        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv", 
-        model_set1 = expand("OmicsBinary_elasticnet_mutCross+\
-        clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces),
-        model_set2 = expand("OmicsBinary_elasticnet_mutCross+\
-        clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces)
-    output:
-        "mcNemar_stackedVSelasticnet_tab.tsv"
+# compute, visualise stacked model AUC distrib across replicates
+rule vis_stacked_performance:
+    input: 
+        tripleNeg = 'preproc_mut0.tsv', 
+        models = expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces),
+        X = expand("mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
+        Y = expand("OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces)
+    output: 
+        performance_tab = protected("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_perfTab.tsv")
+        #AUCagg_plot = "OmicsBinary_StackingCVClassifier_mutCross+\
+        #clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_AUCagg.pdf",
+        #confMatrixAgg_plot = "OmicsBinary_StackingCVClassifier_mutCross+\
+        #clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_confMatrixAgg.pdf"
     params:
-        target_col = "Cetuximab_Standard_3wks_cat"
+        target_col = "Cetuximab_Standard_3wks_cat", 
+        model_name = 'StackingCVClassifier'
     script:
-         srcdir + "/mcNemar_test.py"
+        srcdir+"/aggregate_AUC+confMatrix.py" 
+
+## use McNemar's Test to compare the predictive accuracy of two set of models replicates
+rule mcNemar_stackedVmixOmics:
+    input:
+        response = expand("DrugResponse_LMXfirslevel_trainTest{suffix}.tsv", suffix=split_indeces), 
+        models = expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces),
+        X = expand("mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
+        Y = expand("OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces),
+        mixomics_confMatrix = "PDx_IntegratedTunedDIABLO_confusionMat.tsv"
+    output:
+        test_tab = "mcNemar_stackedVmixOmics_tab.tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        model_name = 'StackingCVClassifier',
+        benchmark_name = 'PLSDA+DIABLO'
+    script:
+         srcdir + "/mcNemar_test_mixomics.py"
+
+## use McNemar's Test to compare the predictive accuracy of two set of models replicates
+rule mcNemar_stackedVtripleNeg:
+    input:
+        tripleNeg = 'preproc_mut0.tsv', 
+        models = expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces),
+        X = expand("mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
+        Y = expand("OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces)
+    output:
+        test_tab = "mcNemar_stackedV3neg_tab.tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        model_name = 'StackingCVClassifier',
+        benchmark_name = 'KRAS-NRAS-BRAF_3neg'
+    script:
+         srcdir + "/mcNemar_test_KRAS-NRAS-BRAF_3neg.py"
+

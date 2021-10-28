@@ -121,7 +121,7 @@ with open(logfile, "w") as log:
             log.write(f"PCC: {pcc}; keep {F1} ({C1}), drop {F2} ({C2})\n")
         elif C1 < C2 and F2 not in features_todrop:
             features_todrop.append(F1)
-            log.write(f"PCC: {pcc}; keep {F2} ({C2}),, drop {F1} ({C1})\n")
+            log.write(f"PCC: {pcc}; keep {F2} ({C2}), drop {F1} ({C1})\n")
 
 # save stacked model input
 pd.concat([combined_train, combined_test]).\
