@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-## Introduction
+# Introduction
 
-
-## Imports
+# Imports
 
 # Data manipulation
 import pandas as pd
@@ -38,7 +37,7 @@ features_pre = drug_mut_df[drug_mut_df["Final_Driver_Annotation"] == True][
      "Gene"]
 ].drop_duplicates()
 
-## Feature preprocessing
+# Feature preprocessing
 
 # 1-hot encode genes, vector sum on sample to
 features_in = pd.get_dummies(features_pre.Gene)
@@ -71,7 +70,7 @@ y_train = all_df.loc[train_models, target_col]
 X_test = all_df.loc[test_models, feature_col]
 y_test = all_df.loc[test_models, target_col]
 
-## Feature engineering
+# Feature engineering
 
 # univariate chi2 w/t binary labels to filter top features for crosses
 # chi2 stat is computed exclusively on the trainig set to prevent leakage
@@ -160,16 +159,20 @@ for gene in reversed(top_features.tolist()):  # inverse rank by chi2
     # pick the best (chi2) feature duo (aka double positive feature combo) involving gene
     gene_duos = chi2_new_df[(chi2_new_df.index.str.contains(gene)) & (
         chi2_new_df.index.str.contains('_double_'))]
-    best_duo = gene_duos.index[0]
-    # drop all other duos involving gene
-    duos_todrop = gene_duos.index[1:].tolist()
+    # check if there's any remaining duos involving gene
+    if len(gene_duos) > 0:
+        best_duo = gene_duos.index[0]
+        # drop all other duos involving gene
+        duos_todrop = gene_duos.index[1:].tolist()
     # pick best trio (aka triple positive or triple negative feature combo) involving gene
     gene_trios = chi2_new_df[(chi2_new_df.index.str.contains(gene)) & (
         chi2_new_df.index.str.contains('_triple_'))]
-    best_trio = gene_trios.index[0]
-    trios_todrop = gene_trios.index[1:].tolist()
-    # dropa all other trios
-    chi2_new_df = chi2_new_df.drop(duos_todrop + trios_todrop)
+    # check if there's any remaining trios involving gene 
+    if len(gene_trios) >0:
+        best_trio = gene_trios.index[0]
+        trios_todrop = gene_trios.index[1:].tolist()
+        # dropa all other trios
+        chi2_new_df = chi2_new_df.drop(duos_todrop + trios_todrop)
 
 # save preprocessed features to file
 features_tokeep = chi2_new_df.index.tolist()
