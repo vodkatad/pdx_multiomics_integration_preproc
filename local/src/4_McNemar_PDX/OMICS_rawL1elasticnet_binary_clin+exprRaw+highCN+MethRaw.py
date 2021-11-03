@@ -2,7 +2,8 @@
 # coding: utf-8
 
 # # Introduction
-# Train, optimise stacked predictor of Cetuximab sensitivity
+# Train, optimise elasticnet predictor of Cetuximab sensitivity
+# starting from 'raw' non-engineered multi-omic features
 
 # ### Imports
 # Import libraries and write settings here.
@@ -20,11 +21,13 @@ pd.options.display.max_rows = 30
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
 # models
 from sklearn.linear_model import LogisticRegression
+# feature selection
+from sklearn.feature_selection import SelectFromModel
 
 # processing
-from sklearn.preprocessing import label_binarize
 from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
+from sklearn.compose import ColumnTransformer, make_column_transformer
 from mlxtend.feature_selection import ColumnSelector
 from sklearn import model_selection
 # benchmark
@@ -37,27 +40,28 @@ import pickle
 
 ## Analysis/Modeling
 ## load all 'omics preprocessed datasets
-# K5 clusters encoded meth probes
+# raw methylation probes data
 f = snakemake.input.meth
 Meth = pd.read_csv(f, sep="\t", header=0, index_col=0)
 Meth = Meth[Meth.columns.drop(list(Meth.filter(regex='Cetuximab')))]
-# encoded expr data w/t progeny pathway scores + msdb hallmarks ssGSEA scores
-# processed through a colinearity + chi2 filter (drop the worst of each colinear pair of features)
+# raw expression data (variance-stabilised RNAseq)
 f = snakemake.input.expr
 Expr = pd.read_csv(f, sep="\t", header=0, index_col=0)
 Expr = Expr[Expr.columns.drop(list(Expr.filter(regex='Cetuximab')))]
 Expr.columns = [c + "_expr" for c in Expr.columns]
-# feature agglomeration CNV, input includes highGain features (> than 1 copy gained)
+# binary CNV features includes 
+# loss, gain highGain (> than 1.5 copies gained) events
 f = snakemake.input.cnv
 CNV = pd.read_csv(f, sep="\t", header=0, index_col=0)
 CNV = CNV[CNV.columns.drop(list(CNV.filter(regex='Cetuximab')))]
 CNV.columns = [c + "_cnv" for c in CNV.columns]
-# custom mut feature cross w/t top 20 features by chi2
+# binary cancer driver mutation events (mutations per gene aggregated)
 f = snakemake.input.mut
 Mut = pd.read_csv(f, sep="\t", header=0, index_col=0)
 Mut = Mut[Mut.columns.drop(list(Mut.filter(regex='Cetuximab')))]
 Mut.columns = [c + "_mut" for c in Mut.columns]
-# add clinical data (custom encoding, filtering)
+# clinical data on origin patient 
+# extensive preproc, egineering done here but no clustering/cross
 f = snakemake.input.clin
 Clin = pd.read_csv(f, sep="\t", header=0, index_col=0)
 Clin = Clin[Clin.columns.drop(list(Clin.filter(regex='Cetuximab')))]
@@ -126,23 +130,46 @@ with open(logfile, "a") as log:
     log.write(f"There are {CNV.shape[1]} copy number features."+ '\n')
     log.write(f"There are {Clin.shape[1]} clinical features."+ '\n') 
 
-# build the elastic net classifier
-elastic_net_classifier = LogisticRegression(penalty='elasticnet', 
+# build the L1 logistic selector for expression, methylation features
+L1LR = LogisticRegression(
+    penalty='l1',
+    solver='saga')
+L1Selector = SelectFromModel(estimator=L1LR)
+
+# buld a ColumnTransformer to apply selector to 
+# expr,meth feature blocks independently
+meth_colnames = [feature_col[i] for i in Meth_indeces]
+expr_colnames = [feature_col[i] for i in Expr_indeces]
+cols_trans = ColumnTransformer([
+    ('meth', L1Selector, meth_colnames),
+    ('expr', L1Selector, expr_colnames),
+    remainder='passthrough' # don't drop mutation,CNV,clinical features
+])
+
+# build the multi-omic elastic net classifier
+elasticNetClassifier = LogisticRegression(penalty='elasticnet', 
                                             random_state=13,
                                             solver='saga')
+
+L1LRelasticnetLR_pipe = Pipeline([
+    ('trans', cols_trans),
+    ('clf', elasticNetClassifier)
+])
+# optimise L1 strictness, elasticnet L1 ratio
 hyperparameter_grid = {
-          'l1_ratio':  np.linspace(.01, .9, 10, endpoint=True)
-          }
+          'clf__l1_ratio':  np.linspace(.01, .9, 3, endpoint=True),
+          'trans__expr__estimator__C' : np.linspace(.01, 1, 3, endpoint=True),
+          'trans__meth__estimator__C' : np.linspace(.01, 1, 3, endpoint=True)}
 
 # Set up the random search with 4-fold stratified cross validation
 skf = StratifiedKFold(n_splits=4,shuffle=True,random_state=42)
-grid = GridSearchCV(estimator=elastic_net_classifier, 
+grid = GridSearchCV(estimator=L1LRelasticnetLR_pipe, 
                     param_grid=hyperparameter_grid, 
                     n_jobs=-1,
                     cv=skf,
                     refit=True,
                     verbose=2)
-# train the stacked model
+# train the model
 grid.fit(X_train, y_train)
 
 # log model perfoormance across training CV iterations

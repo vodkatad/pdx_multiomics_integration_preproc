@@ -1,4 +1,3 @@
-
 configfile: './config'
 datadir = config["PRJ_ROOT"] + config["DATA_DIR"]
 srcdir = config["SRC"]
@@ -46,7 +45,6 @@ rule CN_FeatPreproc:
     script:
         srcdir+"/2c_PDx_CN_GeneWise_CNVkitREDO_highCN_agglomeration.py"
 
-
 # mutation data feature preprocessing
 # & feature crosses (2,3 combos) for top chi2 features
 rule mut_FeatPreproc:
@@ -54,6 +52,7 @@ rule mut_FeatPreproc:
         response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
         mut = datadir+"/Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt"
     output:
+        raw_mut = "raw_mut" + "{suffix}" + ".tsv",
         preproc_mut = "preproc_mut" + "{suffix}" + ".tsv"
     params:
         target_col = "Cetuximab_Standard_3wks_cat",
@@ -61,6 +60,7 @@ rule mut_FeatPreproc:
     script:
         srcdir+"/2b_mut_featureEngineering.py"
 
+# merge RNAseq, genealogy, output raw expression features
 rule expr_merge:
         input:
             response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
@@ -96,6 +96,7 @@ rule expr_merge:
             merge_matrix.to_csv(output.expr_merge, sep='\t')
 
 # preprocess variance stabilised RNAseq expression
+# by spitting into train, test and preparing progeny input
 rule expr_Preproc:
         input:
             response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
@@ -155,13 +156,25 @@ rule expr_FeatPreproc:
     script:
         srcdir+"/2d_PDx_DrugResponse_geneExpr_encodeHALLMARK+PROGENy.py"
 
+# preprocess raw methylation data
+rule meth_FeatRaw:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
+        meth = datadir + "/methylation/m_values_Umberto.hd5"
+    output:
+        raw_meth = "raw_meth.tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    script:
+        srcdir+"/2e_PDx_Meth_raw.py"
+
 # preprocess pre-clusterd (K=5) methylation probes data
 rule meth_FeatPreproc:
     input:
         response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
         meth_K5 = datadir + "/methylation/k5_samples-clusters_division.tsv"
     output:
-        preproc_meth = "preproc_meth"+"{suffix}"+".tsv"
+        protected(preproc_meth = "preproc_meth"+"{suffix}"+".tsv")
     params:
         target_col = "Cetuximab_Standard_3wks_cat"
     script:
@@ -206,18 +219,20 @@ rule train_stacked:
         srcdir + "/OMICS_stacking_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
 
 # establish a performance baseline 
-# using an early integration Elastic-Net penalised
-# logistic regression on the same input as the stacked model
-rule train_elasticnet:
+# using an Elastic-Net penalised
+# LogisticRegression on the raw features (no crosses, clusters)
+# this pipeline uses a single-omic, L1-penalised LogisticRegression 
+# for feature selection on methylation and expression
+rule train_rawL1elasticnet:
     input:
-        mut = "preproc_mut" + "{suffix}" + ".tsv",
-        cnv = "preproc_CNV" + "{suffix}" + ".tsv",
-        expr = "preproc_expr"+"{suffix}"+".tsv",
-        meth = "preproc_meth"+"{suffix}"+".tsv",
-        clin = "preproc_clin"+"{suffix}"+".tsv",
-        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv" 
+        mut =ancient("raw_mut" + "{suffix}" + ".tsv"),
+        cnv =ancient("preproc_CNV" + "{suffix}" + ".tsv"),
+        expr = ancient("expr_merge.tsv"),
+        meth = ancient("raw_meth.tsv"),
+        clin = ancient("preproc_clin"+"{suffix}"+".tsv"),
+        response = ancient("DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv") 
     output:
-        best_model = protected("OmicsBinary_elasticnet_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl")
+        best_model = protected("OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl")
     params:
         target_col = "Cetuximab_Standard_3wks_cat"
     threads: 4
@@ -226,7 +241,7 @@ rule train_elasticnet:
         "elasticnet_fullTrain{suffix}.log",
         "elasticnet_bestModelSummary{suffix}.log"
     script:
-        srcdir + "/OMICS_elasticnet_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
+        srcdir + "/OMICS_rawL1elasticnet_binary_clin+exprRaw+highCN+MethRaw.py"
 
 # compute, visualise stacked model AUC distrib across replicates
 rule vis_stacked_performance:
