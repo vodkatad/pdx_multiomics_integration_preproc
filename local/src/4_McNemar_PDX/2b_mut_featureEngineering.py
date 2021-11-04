@@ -4,7 +4,7 @@
 # Introduction
 
 # Imports
-
+import sys
 # Data manipulation
 import pandas as pd
 import numpy as np
@@ -62,8 +62,10 @@ all_df = all_df.fillna(0)
 # drop duplicated instances (ircc_id) from index
 all_df = all_df[~all_df.index.duplicated(keep='first')]
 # save 'raw' features aka no feature crosses
-all_df[feature_col].to_csv(snakemake.output.raw_mut,
+if snakemake.params.raw:
+    all_df[feature_col].to_csv(snakemake.output.raw_mut,
                                    sep='\t')
+    sys.exit()
 
 # train-test split
 train_models = Y[Y.is_test == False].index.unique()
