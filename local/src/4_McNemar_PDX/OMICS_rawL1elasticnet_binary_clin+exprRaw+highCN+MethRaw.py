@@ -8,7 +8,6 @@
 # ### Imports
 # Import libraries and write settings here.
 # Data manipulation
-from typing import no_type_check_decorator
 import pandas as pd
 import numpy as np
 import warnings
@@ -27,7 +26,7 @@ from sklearn.feature_selection import SelectFromModel
 # processing
 from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
-from sklearn.compose import ColumnTransformer, make_column_transformer
+from sklearn.compose import ColumnTransformer
 from mlxtend.feature_selection import ColumnSelector
 from sklearn import model_selection
 # benchmark
@@ -79,14 +78,19 @@ df1 = pd.merge(Mut, CNV, right_index=True, left_index=True, how="outer")
 df2 = pd.merge(Meth, Expr, right_index=True, left_index=True, how="outer")
 all_df = pd.merge(df2, df1, right_index=True, left_index=True, how="outer")
 all_df = pd.merge(all_df, Clin, right_index=True, left_index=True, how="outer")
+# drop all id cols except index
+all_df = all_df[all_df.columns.drop(list(all_df.filter(regex='ircc_id')))]
 feature_col = all_df.columns.tolist()
+# force to numeric
 all_df =  all_df.select_dtypes([np.number])
-all_df = pd.merge(all_df, Y[target_col], right_index=True, left_index=True, how="right")
+# add target 
+all_df = pd.merge(all_df, Y[target_col], 
+    right_index=True, 
+    left_index=True, 
+    how="right")
 # drop duplicated instances (ircc_id) from index
 all_df = all_df[~all_df.index.duplicated(keep='first')]
-# fill sparse features with median imputation
-all_df[feature_col] = all_df[feature_col].\
-    astype(float).apply(lambda col:col.fillna(col.median()))
+
 # train-test split
 train_models = Y[Y.is_test == False].index.unique()
 test_models = Y[Y.is_test == True].index.unique()
@@ -94,12 +98,16 @@ X_train = all_df.loc[train_models, feature_col]
 y_train  = all_df.loc[train_models, target_col]
 X_test = all_df.loc[test_models, feature_col]
 y_test = all_df.loc[test_models, target_col]
-#scale features separately
+#scale features separately, fill sparse features w/t median imputation
 scaler = MinMaxScaler().fit(X_train)
 X_train = pd.DataFrame(scaler.transform(X_train.values),
-          columns=X_train.columns, index=X_train.index)              
+          columns=X_train.columns, index=X_train.index)
+X_train[feature_col] = X_train[feature_col].\
+    astype(float).apply(lambda col:col.fillna(col.median()))              
 X_test = pd.DataFrame(scaler.transform(X_test.values),
-          columns=X_test.columns, index=X_test.index)    
+          columns=X_test.columns, index=X_test.index)
+X_test[feature_col] = X_test[feature_col].\
+    astype(float).apply(lambda col:col.fillna(col.median()))    
 # log train, test shape, dataset balance
 logfile = snakemake.log[0]
 with open(logfile, "w") as log:
@@ -142,9 +150,8 @@ meth_colnames = [feature_col[i] for i in Meth_indeces]
 expr_colnames = [feature_col[i] for i in Expr_indeces]
 cols_trans = ColumnTransformer([
     ('meth', L1Selector, meth_colnames),
-    ('expr', L1Selector, expr_colnames),
-    remainder='passthrough' # don't drop mutation,CNV,clinical features
-])
+    ('expr', L1Selector, expr_colnames)], 
+    remainder='passthrough') # dont drop mut,CNV features
 
 # build the multi-omic elastic net classifier
 elasticNetClassifier = LogisticRegression(penalty='elasticnet', 
