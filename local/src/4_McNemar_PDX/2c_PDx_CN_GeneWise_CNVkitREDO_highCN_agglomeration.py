@@ -111,6 +111,6 @@ features_in = pd.merge(ctx3w_cat, CNV_matrix,
 features_in = features_in.fillna(0)
 # drop instances w/t missing target 
 features_in = features_in[~features_in[target_col].isna()].drop_duplicates()
-features_in.to_csv(snakemake.output.preproc_CNV,
+features_in[feature_col].to_csv(snakemake.output.preproc_CNV,
                    sep='\t')
 
