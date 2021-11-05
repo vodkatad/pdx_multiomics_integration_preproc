@@ -253,8 +253,8 @@ rule train_rawL1elasticnet:
     output:
         X_train = "mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtrain.tsv",
         X_test = "mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv",
-        Y_train = "OmicsBinary{suffix}_Ytrain.tsv",
-        Y_test = "OmicsBinary{suffix}_Ytest.tsv",
+        #Y_train = "OmicsBinary{suffix}_Ytrain.tsv",
+        #Y_test = "OmicsBinary{suffix}_Ytest.tsv",
         best_model = protected("OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl")
     params:
         target_col = "Cetuximab_Standard_3wks_cat"
@@ -270,8 +270,8 @@ rule train_rawL1elasticnet:
 rule vis_stacked_performance:
     input: 
         tripleNeg = 'preproc_mut0.tsv', 
-        stacked_models = expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces),
-        rawL1elasticnet_models = expand("OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl", suffix=split_indeces),
+        stacked_models = ancient(expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces)),
+        rawL1elasticnet_models = ancient(expand("OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl", suffix=split_indeces)),
         X_eng = expand("mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
         X_raw = expand("mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv", suffix=split_indeces), 
         Y = expand("OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces)
