@@ -266,6 +266,38 @@ rule train_rawL1elasticnet:
     script:
         srcdir + "/OMICS_rawL1elasticnet_binary_clin+exprRaw+highCN+MethRaw.py"
 
+# slice mixOmics train/test input
+# perform glmnet lasso feature selection on meth/expr
+rule mixOmics_pre:
+    input:
+        mut = ancient("raw_mut.tsv"),
+        cnv = ancient("preproc_CNV.tsv"),
+        expr = ancient("expr_merge.tsv"),
+        meth = ancient("raw_meth.tsv"),
+        clin = ancient("preproc_clin"+"{suffix}"+".tsv"),
+        response = ancient("DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv") 
+    output:
+        Y_test = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_test"+".tsv",
+        Y_train = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_train"+".tsv",
+        cnv_test = "preproc_CNV"+"{suffix}_test"+".tsv",
+        cnv_train = "preproc_CNV"+"{suffix}_train"+".tsv",
+        mut_test = "raw_mut"+"{suffix}_test"+".tsv",
+        mut_train = "raw_mut"+"{suffix}_train"+".tsv",
+        clin_test = "preproc_clin"+"{suffix}_test"+".tsv",
+        clin_train = "preproc_clin"+"{suffix}_train"+".tsv",
+        expr_test = "expr_merge"+"{suffix}_test"+".tsv",
+        expr_train = "expr_merge"+"{suffix}_train"+".tsv",
+        meth_test = "raw_meth"+"{suffix}_test"+".tsv",
+        meth_train = "raw_meth"+"{suffix}_train"+".tsv"
+    #conda: '../../local/share/environments/Rmixomics.yml'
+    log:
+        expr_coef = "mixOmics_pre_"+"{suffix}"+"_lassoExpr.log",
+        meth_coef = "mixOmics_pre_"+"{suffix}"+"_lassoMeth.log"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    script:
+        srcdir + "/DIABLO_pre.R" 
+
 # compute, visualise stacked model AUC distrib across replicates
 rule vis_stacked_performance:
     input: 
@@ -286,23 +318,6 @@ rule vis_stacked_performance:
         model_name = 'StackingCVClassifier'
     script:
         srcdir+"/aggregate_AUC+confMatrix.py" 
-
-## use McNemar's Test to compare the predictive accuracy of two set of models replicates
-rule mcNemar_stackedVmixOmics:
-    input:
-        response = expand("DrugResponse_LMXfirslevel_trainTest{suffix}.tsv", suffix=split_indeces), 
-        models = expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces),
-        X = expand("mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
-        Y = expand("OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces),
-        mixomics_confMatrix = "PDx_IntegratedTunedDIABLO_confusionMat.tsv"
-    output:
-        test_tab = "mcNemar_stackedVmixOmics_tab.tsv"
-    params:
-        target_col = "Cetuximab_Standard_3wks_cat",
-        model_name = 'StackingCVClassifier',
-        benchmark_name = 'PLSDA+DIABLO'
-    script:
-         srcdir + "/mcNemar_test_mixomics.py"
 
 ## use McNemar's Test to compare the predictive accuracy of two set of models replicates
 rule mcNemar_stackedVtripleNeg:
