@@ -289,14 +289,42 @@ rule mixOmics_pre:
         expr_train = "expr_merge"+"{suffix}_train"+".tsv",
         meth_test = "raw_meth"+"{suffix}_test"+".tsv",
         meth_train = "raw_meth"+"{suffix}_train"+".tsv"
-    #conda: '../../local/share/environments/Rmixomics.yml'
     log:
+        lasso_select = "mixOmics_pre_"+"{suffix}"+"_lassoSummary.log",
         expr_coef = "mixOmics_pre_"+"{suffix}"+"_lassoExpr.log",
         meth_coef = "mixOmics_pre_"+"{suffix}"+"_lassoMeth.log"
     params:
         target_col = "Cetuximab_Standard_3wks_cat"
     script:
-        srcdir + "/DIABLO_pre.R" 
+        srcdir + "/DIABLO_pre.py" 
+
+rule mixOmics_train:
+    input:
+        Y_test = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_test"+".tsv",
+        Y_train = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_train"+".tsv",
+        cnv_test = "preproc_CNV"+"{suffix}_test"+".tsv",
+        cnv_train = "preproc_CNV"+"{suffix}_train"+".tsv",
+        mut_test = "raw_mut"+"{suffix}_test"+".tsv",
+        mut_train = "raw_mut"+"{suffix}_train"+".tsv",
+        clin_test = "preproc_clin"+"{suffix}_test"+".tsv",
+        clin_train = "preproc_clin"+"{suffix}_train"+".tsv",
+        expr_test = "expr_merge"+"{suffix}_test"+".tsv",
+        expr_train = "expr_merge"+"{suffix}_train"+".tsv",
+        meth_test = "raw_meth"+"{suffix}_test"+".tsv",
+        meth_train = "raw_meth"+"{suffix}_train"+".tsv"
+    output:
+        ncompBER_plot = "PDx_IntegratedDIABLO_ncompBER_lineplot"+"{suffix}"+".pdf",
+        splsda_model =  "OmicsBinary_DIABLOsPLS-DA_clin+exprRaw+highCN+MethRaw{suffix}.rds"
+    threads: 4
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        max_ncomp = 5,
+        minfeatures = config['DIABLO_MINFEATURES'],
+        maxfeatures = config['DIABLO_MAXFEATURES'],
+        step = config['DIABLO_STEP']
+    script:
+         srcdir+"/DIABLO_integrated_model.R"
+
 
 # compute, visualise stacked model AUC distrib across replicates
 rule vis_stacked_performance:
