@@ -21,7 +21,7 @@ custom_style = {'axes.labelcolor': 'black',
 sb.set_style("white", rc=custom_style)
 
 # load triple negative feature
-tripleNeg_df_df = pd.read_csv(snakemake.input.tripleNeg,
+tripleNeg_df = pd.read_csv(snakemake.input.tripleNeg,
                               sep='\t', header=0, index_col=0)['KRAS_BRAF_NRAS_triple_neg']
 target_col = snakemake.params.target_col
 Y_class_dict = {0: 'PD', 1: 'SD-OR'}
@@ -67,7 +67,7 @@ def evaluate_tripleNeg(XtestFile, YtestFile):
     # predict Cetuximab sensitivity based on current gold-standard diagnostic signature
     # aka KRAS-NRAS-BRAF triple negative (triple wild type) status
     # if triple negative (1) -> predict as responsive to cetuximab (1)
-    tripleNeg_y_pred = tripleNeg_df_df.loc[X_test.index]
+    tripleNeg_y_pred = tripleNeg_df.loc[X_test.index]
     tripleNeg_y_pred_readable = [Y_class_dict[y] for y in tripleNeg_y_pred]
     # compute accuracy on test set
     test_accu = 1 - \
@@ -90,9 +90,10 @@ def evaluate_tripleNeg(XtestFile, YtestFile):
 def evaluate_DIABLO(DIABLOPredFile, YtestFile):
     DIABLOPred = pd.read_csv(DIABLOPredFile, sep='\t', 
                         header=None, index_col=0)[1]
-    DIABLOPred_readable = [Y_class_dict[y] for y in DIABLOPred]
     y_test = pd.read_csv(YtestFile, sep="\t", header=0,
                          index_col=0)[target_col]
+    DIABLOPred = DIABLOPred.loc[y_test.index]
+    DIABLOPred_readable = [Y_class_dict[y] for y in DIABLOPred]
     y_test_readable = [Y_class_dict[y] for y in y_test] 
     # compute accuracy on test set
     test_accu = 1 - \
