@@ -42,7 +42,7 @@ drug_response_data = pd.merge(id_data,
 drug_response_data = drug_response_data[~drug_response_data.Cetuximab_Standard_3wks.isna(
 )]
 
-# encode the continuous target variable (tumour growth uoun treatment)
+# encode the continuous target variable (tumour growth after Cetuximab treatment)
 # as a binary var with two states: 
 # Progressive Disease and
 # Stable Disease-Objective Response
@@ -60,7 +60,7 @@ test_size = float(snakemake.params.testSize)
 n_splits = float(snakemake.params.n_splits) 
 labels = drug_response_data[target_col_cat]
 all_models = drug_response_data.ircc_id.unique()
-sss = StratifiedShuffleSplit(n_splits=10, test_size=.3, random_state=13)
+sss = StratifiedShuffleSplit(n_splits=n_splits, test_size=.3, random_state=13)
 for duo, outfile in zip(sss.split(all_models, labels), snakemake.output):
     out_df = drug_response_data.copy() 
     train_index, test_index = duo
