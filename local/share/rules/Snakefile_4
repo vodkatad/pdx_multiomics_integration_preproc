@@ -266,8 +266,8 @@ rule train_rawL1elasticnet:
     script:
         srcdir + "/OMICS_rawL1elasticnet_binary_clin+exprRaw+highCN+MethRaw.py"
 
-# slice mixOmics train/test input
-# perform glmnet lasso feature selection on meth/expr
+# slice mixOmics train/test input, normalise
+# perform L1-pealised (lasso-like) feature selection on meth/expr
 rule mixOmics_pre:
     input:
         mut = ancient("raw_mut.tsv"),
@@ -298,19 +298,14 @@ rule mixOmics_pre:
     script:
         srcdir + "/DIABLO_pre.py" 
 
+# train the DIABLO sPLS-DA mixOmics model
 rule mixOmics_train:
     input:
-        Y_test = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_test"+".tsv",
         Y_train = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_train"+".tsv",
-        cnv_test = "preproc_CNV"+"{suffix}_test"+".tsv",
         cnv_train = "preproc_CNV"+"{suffix}_train"+".tsv",
-        mut_test = "raw_mut"+"{suffix}_test"+".tsv",
         mut_train = "raw_mut"+"{suffix}_train"+".tsv",
-        clin_test = "preproc_clin"+"{suffix}_test"+".tsv",
         clin_train = "preproc_clin"+"{suffix}_train"+".tsv",
-        expr_test = "expr_merge"+"{suffix}_test"+".tsv",
         expr_train = "expr_merge"+"{suffix}_train"+".tsv",
-        meth_test = "raw_meth"+"{suffix}_test"+".tsv",
         meth_train = "raw_meth"+"{suffix}_train"+".tsv"
     output:
         ncompBER_plot = "PDx_IntegratedDIABLO_ncompBER_lineplot"+"{suffix}"+".pdf",
@@ -325,6 +320,32 @@ rule mixOmics_train:
     script:
          srcdir+"/DIABLO_integrated_model.R"
 
+rule mixOmics_validate:
+    input:
+        model = "OmicsBinary_DIABLOsPLS-DA_clin+exprRaw+highCN+MethRaw{suffix}.rds",
+        mut_Xtest  = "raw_mut"+"{suffix}_test"+".tsv", 
+        cnv_Xtest  =  "preproc_CNV"+"{suffix}_test"+".tsv",
+        clin_Xtest = "preproc_clin"+"{suffix}_test"+".tsv",
+        meth_Xtest  = "raw_meth"+"{suffix}_test"+".tsv",
+        expr_Xtest  = "expr_merge"+"{suffix}_test"+".tsv",
+        Ytest = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_test"+".tsv"
+    output:
+        trainBER_table = "PDx_IntegratedTunedDIABLO_BER"+"{suffix}"+".tsv", 
+        PlotIndiv = "PDx_IntegratedTunedDIABLO_PlotIndiv"+"{suffix}"+".pdf",
+        loadings_table = "PDx_IntegratedTunedDIABLO_loadings"+"{suffix}"+".tsv",
+        plotDiablo = "PDx_IntegratedTunedDIABLO_plotDiablo"+"{suffix}"+".pdf",
+        plotArrow = "PDx_IntegratedTunedDIABLO_plotArrow"+"{suffix}"+".pdf",
+        circosPlot = "PDx_IntegratedTunedDIABLO_circosPlot"+"{suffix}"+".pdf",
+        corrHeatmap = "PDx_IntegratedTunedDIABLO_corrHeatmap"+"{suffix}"+".pdf",
+        testPred = "PDx_IntegratedTunedDIABLO_testPred"+"{suffix}"+".tsv",
+        confusionMat = "PDx_IntegratedTunedDIABLO_confusionMat"+"{suffix}"+".tsv"
+    threads: 4 
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    log:
+       "perfByComp_DIABLO"+"{suffix}"+".log"
+    script:
+         srcdir+"/DIABLO_integrated_model_perf.R"
 
 # compute, visualise stacked model AUC distrib across replicates
 rule vis_stacked_performance:
