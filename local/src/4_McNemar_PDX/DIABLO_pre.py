@@ -141,7 +141,7 @@ X_test[Clin.columns].to_csv(
 
 # run Lasso (L1 -penalised LogReg) feature selection on methylatioin and expression data
 L1LR = LogisticRegression(
-    C=.9,
+    C=3,
     penalty='l1',
     random_state=13,
     solver='saga',
