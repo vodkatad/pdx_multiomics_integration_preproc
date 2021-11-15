@@ -1,0 +1,438 @@
+configfile: './config'
+datadir = config["PRJ_ROOT"] + config["DATA_DIR"]
+srcdir = config["SRC"]
+n_splits = int(config['N_SPLITS'])
+split_indeces = [str(i) for i in range(n_splits)]
+wildcard_constraints:
+    suffix="\d+"
+
+# map different PDx model ids
+# merge drug response data, encode target variable
+# split samples in train/test sets (stratified)
+rule trainTest_split:
+    input:
+        ids = datadir+"/mapping_sanger_ID_genealogy_long.tsv",
+        drug = datadir + "/drug_response/Treatments_Eugy_Ele_fix0cetuxi_201005.tsv"
+    output:
+        protected(expand("DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv", suffix=split_indeces))
+    params:
+        n_splits = config['N_SPLITS'],
+        testSize = config['TEST_SIZE'],
+        target_col = config['TARGET_COL'],
+        class_labels = config['CLASS_LABELS'],
+        class_bins = config['CLASS_BINS']
+    threads: 1
+    script:
+        srcdir+"/1_PDx_drug_response_preTrainTest.py"
+
+# copy number data preprocessing, feature engineering
+# these gain/loss thresholds are fairly conservative for PDXs (low impurity)
+# for high gain: ~.5 = 1 copy gain, ~1 = 2 copy gain
+# this outputs ~600 features which are then clustered (WardAgg) in the training pipeline
+rule CN_FeatPreproc:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
+        cnv = datadir + "/CNA_annotation/our_cn_genes2_CNVkitREDO_25012021.tsv",
+        targeted = datadir + "/targeted_intogen_common_geneset.tsv",
+        TCGA_CNV = datadir + "/TCGA_COADREAD_02092020_maskedCNS_intogen_admire-gistic_genewise_CNV_mapToGene.tsv"
+    output:
+        preproc_CNV = "preproc_CNV.tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        loss_thr = -.2, 
+        gain_thr = .1,
+        high_gain_thr = .75
+    script:
+        srcdir+"/2c_PDx_CN_GeneWise_CNVkitREDO_highCN_agglomeration.py"
+
+ 
+# mutation data feature preprocessing
+# & feature crosses (2,3 combos) for top chi2 features
+rule mut_FeatPreproc:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+        mut = datadir+"/Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt"
+    output:
+        preproc_mut = "preproc_mut" + "{suffix}" + ".tsv"
+    params:
+        raw = False, 
+        target_col = "Cetuximab_Standard_3wks_cat",
+        univ_ptl = "75%" # select top Kth features for combos
+    script:
+        srcdir+"/2b_mut_featureEngineering.py"
+ 
+#raw mutation data features
+rule mut_FeatRaw:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
+        mut = datadir+"/Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt"
+    output:
+        raw_mut = "raw_mut.tsv"
+    params:
+        raw = True,
+        target_col = "Cetuximab_Standard_3wks_cat",
+        univ_ptl = "75%" # select top Kth features for combos
+    script:
+        srcdir+"/2b_mut_featureEngineering.py"
+
+# merge RNAseq, genealogy, output raw expression features
+rule expr_merge:
+        input:
+            response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
+            expr = datadir+"/RNAseq/release_2/selected_matrix.tsv"
+        output:
+            expr_merge = "expr_merge.tsv",
+        params:
+            target_col = "Cetuximab_Standard_3wks_cat"
+        run:
+            import pandas as pd
+
+            # load sample id conversion table, drug response data
+            target_col = params.target_col
+            drug_response_data = pd.read_csv(input.response, sep="\t")
+
+            # load expression data from RNAseq
+            # these are variance stabilized (vsd)
+            rnaseq_matrix = pd.read_csv(input.expr, sep="\t", header=0, index_col=0)
+            # transpose for merging, index on full RNAseq id
+            rnaseq_matrix = rnaseq_matrix.T.reset_index().\ 
+                rename(columns={'index': 'ircc_id'})
+            # aggregate RNAseq replicates (same short id) by expr mean
+            rnaseq_matrix["ircc_id_short"] = rnaseq_matrix.ircc_id.apply(lambda x: x[0:7])
+            rnaseq_matrix = rnaseq_matrix.groupby('ircc_id_short').mean().reset_index()
+            # merge expression and response using the short genealogy id
+            # to link the RNA id and the DNA id
+            merge_matrix = pd.merge(rnaseq_matrix,
+                                    drug_response_data[[
+                                        target_col, "ircc_id_short", "ircc_id"]],
+                                    on="ircc_id_short").set_index("ircc_id")
+            # drop instances w/t missing target value
+            merge_matrix = merge_matrix[~merge_matrix[target_col].isna()]
+            merge_matrix.to_csv(output.expr_merge, sep='\t')
+
+# preprocess variance stabilised RNAseq expression
+# by spitting into train, test and preparing progeny input
+rule expr_Preproc:
+        input:
+            response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+            expr_merge = "expr_merge.tsv"
+        output:
+            expr_clean_train = "clean_expr_train"+"{suffix}"+".tsv",
+            expr_clean_test = "clean_expr_test"+"{suffix}"+".tsv"
+        params:
+            target_col = "Cetuximab_Standard_3wks_cat"
+        run:
+            import pandas as pd
+
+            # load sample id conversion table, drug response data
+            target_col = params.target_col
+            drug_response_data = pd.read_csv(input.response, sep="\t")
+            merge_matrix = pd.read_csv(input.expr_merge, sep='\t', index_col=0)
+            merge_matrix = merge_matrix.drop("ircc_id_short", axis=1).drop_duplicates()
+            # remove missing instances
+            drug_response_data = drug_response_data[drug_response_data.ircc_id.\
+            isin(merge_matrix.index)] 
+            # train/test sets specific to this replicate
+            train_models =  drug_response_data[drug_response_data.is_test == False].ircc_id
+            test_models = drug_response_data[drug_response_data.is_test == True].ircc_id 
+            # transpose again for PROGENy, split train/test
+            out_df = merge_matrix.T
+            out_df[train_models].to_csv(output.expr_clean_train, sep="\t")
+            out_df[test_models].to_csv(output.expr_clean_test, sep="\t")
+
+# calc PROGENy scores for train, test separately
+rule calc_progeny:
+    input:
+        expr_train = rules.expr_Preproc.output.expr_clean_train,
+        expr_test = rules.expr_Preproc.output.expr_clean_test
+    output:
+        progeny_train = "progeny_train" + "{suffix}" + ".tsv",
+        progeny_test = "progeny_test" + "{suffix}" + ".tsv" 
+    script:
+       srcdir+"/progeny_SamplePathActivity.R"
+
+
+## preprocess ssGSEA Hallmarks and PROGENy scores computed on
+## variance stabilised expression
+rule expr_FeatPreproc:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+        progeny_train = "progeny_train"+"{suffix}"+".tsv",
+        progeny_test = "progeny_test"+"{suffix}"+".tsv", 
+        hallmarks_train = datadir+"/ssGSEA_"+str(config['N_SPLITS'])+"fold/"+"{suffix}"+"_LMXfirstlevel_train_h-scores.tsv",
+        hallmarks_test = datadir+"/ssGSEA_"+str(config['N_SPLITS'])+"fold/"+"{suffix}"+"_LMXfirstlevel_test_h-scores.tsv"
+    output:
+        preproc_expr = "preproc_expr"+"{suffix}"+".tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        corr_thrs = .7
+    log:
+        "expr_featureEng{suffix}.log"
+    script:
+        srcdir+"/2d_PDx_DrugResponse_geneExpr_encodeHALLMARK+PROGENy.py"
+
+# preprocess raw methylation data
+rule meth_FeatRaw:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
+        meth = datadir + "/methylation/m_values_Umberto.hdf5",
+        bDTpval =  datadir + "/methylation/beta_DT-pvalue_Xeno.tsv",
+        Msd = datadir + "/methylation/m_sdvalue.tsv",
+        probe_gene_map = datadir + '/methylation/collapsed_ALLprobes.bestSDs.tsv'
+    output:
+        raw_meth = "raw_meth.tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        sd_pctl = "30%"
+    script:
+        srcdir+"/2e_PDx_Meth_raw.py"
+
+# preprocess pre-clusterd (K=5) methylation probes data
+rule meth_FeatPreproc:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+        meth_K5 = datadir + "/methylation/k5_samples-clusters_division.tsv"
+    output:
+        preproc_meth = protected("preproc_meth"+"{suffix}"+".tsv")
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    script:
+        srcdir+"/2e_PDx_Meth_probeK5Cluster.py"
+
+# clean, preprocess on clinical data (origin patient)
+rule clin_FeatPreproc:
+    input:
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+        clin_data = datadir + "/clinical/DateCliniche_20170922.xlsx",
+        site_annot =  datadir + "/clinical/Site_annotations_LMX.tsv"
+    output:
+        preproc_clin = "preproc_clin"+"{suffix}"+".tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    script:
+        srcdir+"/2a_clinical_data.py"
+
+# stacked model training on the engineered feature dataset
+rule train_stacked:
+    input:
+        mut = "preproc_mut" + "{suffix}" + ".tsv",
+        cnv = "preproc_CNV.tsv",
+        expr = "preproc_expr"+"{suffix}"+".tsv",
+        meth = "preproc_meth"+"{suffix}"+".tsv",
+        clin = "preproc_clin"+"{suffix}"+".tsv",
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv" 
+    output:
+        X_train = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv",
+        X_test = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv",
+        Y_train = "OmicsBinary{suffix}_Ytrain.tsv",
+        Y_test = "OmicsBinary{suffix}_Ytest.tsv",
+        best_model = protected("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl")
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    threads: 4
+    log:  
+        "stacked_input{suffix}.log",
+        "stacked_fullTrain{suffix}.log",
+        "stacked_bestModelSummary{suffix}.log"
+    script:
+        srcdir + "/OMICS_stacking_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
+
+# establish a performance baseline 
+# using an Elastic-Net penalised
+# LogisticRegression on the raw features (no crosses, clusters)
+# this pipeline uses a single-omic, L1-penalised LogisticRegression 
+# for feature selection on methylation and expression
+rule train_rawL1elasticnet:
+    input:
+        mut =ancient("raw_mut.tsv"),
+        cnv =ancient("preproc_CNV.tsv"),
+        expr = ancient("expr_merge.tsv"),
+        meth = ancient("raw_meth.tsv"),
+        clin = ancient("preproc_clin"+"{suffix}"+".tsv"),
+        response = ancient("DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv") 
+    output:
+        X_train = "mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtrain.tsv",
+        X_test = "mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv",
+        #Y_train = "OmicsBinary{suffix}_Ytrain.tsv",
+        #Y_test = "OmicsBinary{suffix}_Ytest.tsv",
+        best_model = protected("OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl")
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    threads: 4
+    log:  
+        "rawL1elasticnet_input{suffix}.log",
+        "rawL1elasticnet_fullTrain{suffix}.log",
+        "rawL1elasticnet_bestModelSummary{suffix}.log"
+    script:
+        srcdir + "/OMICS_rawL1elasticnet_binary_clin+exprRaw+highCN+MethRaw.py"
+
+# slice mixOmics train/test input, normalise
+# perform L1-pealised (lasso-like) feature selection on meth/expr
+rule mixOmics_pre:
+    input:
+        mut = ancient("raw_mut.tsv"),
+        cnv = ancient("preproc_CNV.tsv"),
+        expr = ancient("expr_merge.tsv"),
+        meth = ancient("raw_meth.tsv"),
+        clin = ancient("preproc_clin"+"{suffix}"+".tsv"),
+        response = ancient("DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv") 
+    output:
+        Y_test = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_test"+".tsv",
+        Y_train = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_train"+".tsv",
+        cnv_test = "preproc_CNV"+"{suffix}_test"+".tsv",
+        cnv_train = "preproc_CNV"+"{suffix}_train"+".tsv",
+        mut_test = "raw_mut"+"{suffix}_test"+".tsv",
+        mut_train = "raw_mut"+"{suffix}_train"+".tsv",
+        clin_test = "preproc_clin"+"{suffix}_test"+".tsv",
+        clin_train = "preproc_clin"+"{suffix}_train"+".tsv",
+        expr_test = "expr_merge"+"{suffix}_test"+".tsv",
+        expr_train = "expr_merge"+"{suffix}_train"+".tsv",
+        meth_test = "raw_meth"+"{suffix}_test"+".tsv",
+        meth_train = "raw_meth"+"{suffix}_train"+".tsv"
+    log:
+        lasso_select = "mixOmics_pre_"+"{suffix}"+"_lassoSummary.log",
+        expr_coef = "mixOmics_pre_"+"{suffix}"+"_lassoExpr.log",
+        meth_coef = "mixOmics_pre_"+"{suffix}"+"_lassoMeth.log"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    script:
+        srcdir + "/DIABLO_pre.py" 
+
+# train the DIABLO sPLS-DA mixOmics model
+rule mixOmics_train:
+    input:
+        Y_train = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_train"+".tsv",
+        cnv_train = "preproc_CNV"+"{suffix}_train"+".tsv",
+        mut_train = "raw_mut"+"{suffix}_train"+".tsv",
+        clin_train = "preproc_clin"+"{suffix}_train"+".tsv",
+        expr_train = "expr_merge"+"{suffix}_train"+".tsv",
+        meth_train = "raw_meth"+"{suffix}_train"+".tsv"
+    output:
+        ncompBER_plot = "PDx_IntegratedDIABLO_ncompBER_lineplot"+"{suffix}"+".pdf",
+        splsda_model =  "OmicsBinary_DIABLOsPLS-DA_clin+exprRaw+highCN+MethRaw{suffix}.rds"
+    threads: 4
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        max_ncomp = 5,
+        minfeatures = config['DIABLO_MINFEATURES'],
+        maxfeatures = config['DIABLO_MAXFEATURES'],
+        step = config['DIABLO_STEP']
+    script:
+         srcdir+"/DIABLO_integrated_model.R"
+
+rule mixOmics_validate:
+    input:
+        model = "OmicsBinary_DIABLOsPLS-DA_clin+exprRaw+highCN+MethRaw{suffix}.rds",
+        mut_Xtest  = "raw_mut"+"{suffix}_test"+".tsv", 
+        cnv_Xtest  =  "preproc_CNV"+"{suffix}_test"+".tsv",
+        clin_Xtest = "preproc_clin"+"{suffix}_test"+".tsv",
+        meth_Xtest  = "raw_meth"+"{suffix}_test"+".tsv",
+        expr_Xtest  = "expr_merge"+"{suffix}_test"+".tsv",
+        Ytest = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}_test"+".tsv"
+    output:
+        trainBER_table = "PDx_IntegratedTunedDIABLO_BER"+"{suffix}"+".tsv", 
+        PlotIndiv = "PDx_IntegratedTunedDIABLO_PlotIndiv"+"{suffix}"+".pdf",
+        loadings_table = "PDx_IntegratedTunedDIABLO_loadings"+"{suffix}"+".tsv",
+        plotDiablo = "PDx_IntegratedTunedDIABLO_plotDiablo"+"{suffix}"+".pdf",
+        plotArrow = "PDx_IntegratedTunedDIABLO_plotArrow"+"{suffix}"+".pdf",
+        circosPlot = "PDx_IntegratedTunedDIABLO_circosPlot"+"{suffix}"+".pdf",
+        corrHeatmap = "PDx_IntegratedTunedDIABLO_corrHeatmap"+"{suffix}"+".pdf",
+        testPred = "PDx_IntegratedTunedDIABLO_testPred"+"{suffix}"+".tsv",
+        confusionMat = "PDx_IntegratedTunedDIABLO_confusionMat"+"{suffix}"+".tsv"
+    threads: 4 
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    log:
+       "perfByComp_DIABLO"+"{suffix}"+".log"
+    script:
+         srcdir+"/DIABLO_integrated_model_perf.R"
+
+# compute, visualise all model performance across replicates
+rule vis_stacked_performance:
+    input: 
+        tripleNeg = 'preproc_mut0.tsv', 
+        stacked_models = ancient(expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces)),
+        rawL1elasticnet_models = ancient(expand("OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl", suffix=split_indeces)),
+        DIABLOsPLSDA_pred = ancient(expand("PDx_IntegratedTunedDIABLO_testPred"+"{suffix}"+".tsv", suffix=split_indeces)), 
+        X_eng = expand("mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
+        X_raw = expand("mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv", suffix=split_indeces), 
+        Y = expand("OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces)
+    output: 
+        performance_tab = protected("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_perfTab.tsv")
+        #AUCagg_plot = "OmicsBinary_StackingCVClassifier_mutCross+\
+        #clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_AUCagg.pdf",
+        #confMatrixAgg_plot = "OmicsBinary_StackingCVClassifier_mutCross+\
+        #clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_confMatrixAgg.pdf"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat", 
+        model_name = 'StackingCVClassifier'
+    script:
+        srcdir+"/aggregate_AUC+confMatrix.py" 
+
+rule tripleNegFilter_pre:
+    input:
+        tripleNeg = 'preproc_mut0.tsv',
+        X_eng = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv",
+        X_raw = "mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv",
+        Y = "OmicsBinary{suffix}_Ytest.tsv", 
+    output:
+        X_eng_tripleNeg = "tripleNegONLY_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv",
+        X_raw_tripleNeg = "tripleNegONLY_mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv",
+        Y_tripleNeg = "tripleNegONLY_OmicsBinary{suffix}_Ytest.tsv"
+    run:
+        import pandas as pd
+        # load triple negative feature
+        Y_test = pd.read_csv(input.Y, sep="\t", header=0, index_col=0)
+        tripleNeg_df = pd.read_csv(input.tripleNeg,
+                              sep='\t', header=0, 
+                              index_col=0)
+        tripleNeg_models = tripleNeg_df[
+            tripleNeg_df.KRAS_BRAF_NRAS_triple_neg == 1].index.tolist()
+        tripleNeg_models = [m for m in tripleNeg_models if m in Y_test.index]
+        # filter out non-triple-WT models from the test set
+        X_test_raw = pd.read_csv(input.X_raw, sep="\t", header=0, index_col=0)
+        X_test_raw.loc[tripleNeg_models].to_csv(output.X_raw_tripleNeg, sep='\t') 
+        X_test_eng = pd.read_csv(input.X_eng, sep="\t", header=0, index_col=0)
+        X_test_eng.loc[tripleNeg_models].to_csv(output.X_eng_tripleNeg, sep='\t')
+        Y_test.loc[tripleNeg_models].to_csv(output.Y_tripleNeg, sep='\t') 
+
+# compute, visualise all model performance across replicates
+# here using only KRAS-NRAS-BRAF triple wt models in the test set 
+rule tripleNegFilter_vis_stacked_performance:
+    input: 
+        tripleNeg = 'preproc_mut0.tsv', 
+        stacked_models = ancient(expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces)),
+        rawL1elasticnet_models = ancient(expand("OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl", suffix=split_indeces)),
+        DIABLOsPLSDA_pred = ancient(expand("PDx_IntegratedTunedDIABLO_testPred"+"{suffix}"+".tsv", suffix=split_indeces)), 
+        X_eng = expand("tripleNegONLY_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
+        X_raw = expand("tripleNegONLY_mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv", suffix=split_indeces), 
+        Y = expand("tripleNegONLY_OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces)
+    output: 
+        performance_tab = protected("tripleNegONLY_OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_perfTab.tsv")
+        #AUCagg_plot = "OmicsBinary_StackingCVClassifier_mutCross+\
+        #clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_AUCagg.pdf",
+        #confMatrixAgg_plot = "OmicsBinary_StackingCVClassifier_mutCross+\
+        #clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_confMatrixAgg.pdf"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat", 
+        model_name = 'StackingCVClassifier'
+    script:
+        srcdir+"/aggregate_AUC+confMatrix.py" 
+
+
+## use McNemar's Test to compare the predictive accuracy of two set of models replicates
+rule mcNemar_stackedVtripleNeg:
+    input:
+        tripleNeg = 'preproc_mut0.tsv', 
+        models = expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces),
+        X = expand("mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
+        Y = expand("OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces)
+    output:
+        test_tab = "mcNemar_stackedV3neg_tab.tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        model_name = 'StackingCVClassifier',
+        benchmark_name = 'KRAS-NRAS-BRAF_3neg'
+    script:
+         srcdir + "/mcNemar_test_KRAS-NRAS-BRAF_3neg.py"
+
