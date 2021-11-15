@@ -141,9 +141,9 @@ with open(logfile, "a") as log:
 
 # write train,test sets to file
 X_train.to_csv(snakemake.output.X_train, sep='\t')
-y_train.to_csv(snakemake.output.Y_train, sep='\t')
+#y_train.to_csv(snakemake.output.Y_train, sep='\t')
 X_test.to_csv(snakemake.output.X_test, sep='\t')
-y_test.to_csv(snakemake.output.Y_test, sep='\t')
+#y_test.to_csv(snakemake.output.Y_test, sep='\t')
 
 
 # build the L1 logistic selector for expression, methylation features
@@ -173,8 +173,8 @@ L1LRelasticnetLR_pipe = Pipeline([
 # optimise L1 strictness, elasticnet L1 ratio
 hyperparameter_grid = {
     'clf__l1_ratio':  np.linspace(.01, .9, 3, endpoint=True),
-    'trans__expr__estimator__C': np.linspace(.01, 1, 3, endpoint=True),
-    'trans__meth__estimator__C': np.linspace(.01, 1, 3, endpoint=True)}
+    'trans__expr__estimator__C': np.linspace(.01, 10, 5, endpoint=True),
+    'trans__meth__estimator__C': np.linspace(.01, 10, 5, endpoint=True)}
 
 # Set up the random search with 4-fold stratified cross validation
 skf = StratifiedKFold(n_splits=4, shuffle=True, random_state=42)
