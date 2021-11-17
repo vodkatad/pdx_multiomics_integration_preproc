@@ -107,6 +107,10 @@ print("tuned the model")
 # train final sPLS-DA model,
 # use optimal number of components and features
 optimal_ncomp<-tune.omics$choice.ncomp$ncomp 
+# make sure number of components is >2 for plotting
+if(optimal_ncomp<=2) {
+   optimal_ncomp<-2
+} 
 list.keepX=list("expr"=first(tune.omics$choice.keepX$expr, optimal_ncomp),
                 "mut"=first(tune.omics$choice.keepX$mut, optimal_ncomp),
                 "meth"=first(tune.omics$choice.keepX$meth, optimal_ncomp),
