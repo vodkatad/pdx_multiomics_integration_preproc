@@ -279,12 +279,13 @@ rule expr_FeatPreproc:
 rule CMP_expr_FeatPreproc:
     input:
         PDX_response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
+        PDX_progeny_train = "progeny_train0.tsv",
         PDX_progeny_test = "progeny_test0.tsv",
-        PDX_hallmarks_test = datadir+"/ssGSEA_"+str(config['N_SPLITS'])+"fold/" + str(
-            config['N_SPLITS']) + "-0_LMXfirstlevel_test_h-scores.tsv",
-       CMP_response = "DrugResponse_CMP+GDSC_CRCcetuximab_ALL.csv",
-       CMP_progeny = "CMP_progeny_ALL.tsv",
-       CMP_hallmarks = datadir+"/RNAseq/CMP+GDSC_CRCcetuximab/CMP_whole_h-scores.tsv" 
+        PDX_hallmarks_test = datadir+"/ssGSEA_"+str(config['N_SPLITS'])+"fold/" + str(config['N_SPLITS']) + "-0_LMXfirstlevel_test_h-scores.tsv",
+        PDX_hallmarks_train = datadir+"/ssGSEA_"+str(config['N_SPLITS'])+"fold/" + str(config['N_SPLITS']) + "-0_LMXfirstlevel_train_h-scores.tsv",
+        CMP_response = "DrugResponse_CMP+GDSC_CRCcetuximab_ALL.csv",
+        CMP_progeny = "CMP_progeny_ALL.tsv",
+        CMP_hallmarks = datadir+"/RNAseq/CMP+GDSC_CRCcetuximab/CMP_whole_h-scores.tsv" 
     output:
         preproc_expr = "CMP_preproc_expr.tsv"
     params:
@@ -292,7 +293,7 @@ rule CMP_expr_FeatPreproc:
         CMP_target_col = "IC50_byMedian_cat",
         corr_thrs = .7
     log:
-        "expr_featureEng{suffix}.log"
+        "CMP_expr_featureEng.log"
     script:
         srcdir+"/2d_PDx_DrugResponse_geneExpr_encodeHALLMARK+PROGENy.py"
 
@@ -337,7 +338,7 @@ rule clin_FeatPreproc:
     script:
         srcdir+"/2a_clinical_data.py"
 
-# stacked model training on the engineered feature dataset
+# stacked model training on the engineered PDX feature dataset
 rule train_stacked:
     input:
         mut = "preproc_mut" + "{suffix}" + ".tsv",
@@ -362,6 +363,52 @@ rule train_stacked:
         "stacked_bestModelSummary{suffix}.log"
     script:
         srcdir + "/OMICS_stacking_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
+
+# stacked model training on the Mut-CNV-Expr PDX engineered feature dataset
+rule train_mutCNVexpr_stacked:
+    input:
+        mut = "preproc_mut" + "{suffix}" + ".tsv",
+        cnv = "preproc_CNV.tsv",
+        expr = "preproc_expr"+"{suffix}"+".tsv",
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv"
+    output:
+        X_train = "mutCross+exprPROGENyHALLMARKS+highCNagg{suffix}_Xtrain.tsv",
+        X_test = "mutCross+exprPROGENyHALLMARKS+highCNagg{suffix}_Xtest.tsv",
+        best_model = protected(
+            "OmicsBinary_StackingCVClassifier_mutCross+exprPROGENyHALLMARKS+highCNagg{suffix}.pkl")
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    threads: 4
+    log:
+        "mutCNVexpr_stacked_input{suffix}.log",
+        "mutCNVexpr_stacked_fullTrain{suffix}.log",
+        "mutCNVexpr_stacked_bestModelSummary{suffix}.log"
+    script:
+        srcdir + "/OMICS_stacking_binary_mutCross+exprPROGENyHALLMARKS+highCNagg.py"
+
+# stacked model training on the Mut-CNV-Expr CMP-GDSC engineered feature dataset
+rule train_CMPmutCNVexpr_stacked:
+    input:
+        response = ancient("DrugResponse_CMP+GDSC_CRCcetuximab_ALL.csv"),
+        PDX_response = ancient("DrugResponse_LMXfirslevel_trainTest0.tsv"),
+        mut = ancient("CMP_preproc_mutALL.tsv"),
+        expr =  ancient("CMP_preproc_expr.tsv"),
+        CNV = ancient("CMP_preproc_CNV.tsv")
+    output:
+        X_train = "CMP_mutCross+exprPROGENyHALLMARKS+highCNaggALL_Xtrain.tsv",
+        X_test = "PDX_mutCross+exprPROGENyHALLMARKS+highCNaggALL_Xtest.tsv",
+        best_model = protected(
+            "OmicsBinary_StackingCVClassifier_CMP_mutCross+exprPROGENyHALLMARKS+highCNaggALL.pkl")
+    params:
+        CMP_target_col = "IC50_byMedian_cat",
+        PDX_target_col = "Cetuximab_Standard_3wks_cat"
+    threads: 4
+    log:
+        "CMP_mutCNVexpr_stacked_inputALL.log",
+        "CMP_mutCNVexpr_stacked_fullTrainALL.log",
+        "CMP_mutCNVexpr_stacked_bestModelSummaryALL.log"
+    script:
+        srcdir + "/CMP+GDSCtestPDX_OMICS_stacking_binary_exprPROGENyHALLMARKS+highCNagg.py"
 
 # establish a performance baseline
 # using an Elastic-Net penalised
@@ -482,7 +529,7 @@ rule mixOmics_validate:
     script:
         srcdir+"/DIABLO_integrated_model_perf.R"
 
-# compute, visualise all model performance across replicates
+# compute, visualise all model performance on the PDX test set across replicates
 rule vis_stacked_performance:
     input:
         tripleNeg = 'preproc_mut0.tsv',
@@ -515,14 +562,14 @@ rule tripleNegFilter_pre:
         tripleNeg = 'preproc_mut0.tsv',
         X_eng = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv",
         X_raw = "mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv",
-        Y = "OmicsBinary{suffix}_Ytest.tsv",
+        Y = "OmicsBinary{suffix}_Ytest.tsv"
     output:
         X_eng_tripleNeg = "tripleNegONLY_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv",
         X_raw_tripleNeg = "tripleNegONLY_mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv",
         Y_tripleNeg = "tripleNegONLY_OmicsBinary{suffix}_Ytest.tsv"
     run:
         import pandas as pd
-        # load triple negative feature
+        # load KRAS-NRAS-BRAF triple negative feature
         Y_test = pd.read_csv(input.Y, sep="\t", header=0, index_col=0)
         tripleNeg_df = pd.read_csv(input.tripleNeg,
                                    sep='\t', header=0,
@@ -544,12 +591,9 @@ rule tripleNegFilter_pre:
 rule tripleNegFilter_vis_stacked_performance:
     input:
         tripleNeg = 'preproc_mut0.tsv',
-        stacked_models = ancient(expand(
-            "OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces)),
-        rawL1elasticnet_models = ancient(expand(
-            "OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl", suffix=split_indeces)),
-        DIABLOsPLSDA_pred = ancient(expand(
-            "PDx_IntegratedTunedDIABLO_testPred"+"{suffix}"+".tsv", suffix=split_indeces)),
+        stacked_models = ancient(expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces)),
+        rawL1elasticnet_models = ancient(expand("OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl", suffix=split_indeces)),
+        DIABLOsPLSDA_pred = ancient(expand("PDx_IntegratedTunedDIABLO_testPred"+"{suffix}"+".tsv", suffix=split_indeces)),
         X_eng = expand(
             "tripleNegONLY_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
         X_raw = expand(
@@ -557,8 +601,7 @@ rule tripleNegFilter_vis_stacked_performance:
         Y = expand(
             "tripleNegONLY_OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces)
     output:
-        performance_tab = protected(
-            "tripleNegONLY_OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_perfTab.tsv")
+        performance_tab = protected("tripleNegONLY_OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_perfTab.tsv")
         # AUCagg_plot = "OmicsBinary_StackingCVClassifier_mutCross+\
         # clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_AUCagg.pdf",
         # confMatrixAgg_plot = "OmicsBinary_StackingCVClassifier_mutCross+\
@@ -574,10 +617,8 @@ rule tripleNegFilter_vis_stacked_performance:
 rule mcNemar_stackedVtripleNeg:
     input:
         tripleNeg = 'preproc_mut0.tsv',
-        models = expand(
-            "OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces),
-        X = expand(
-            "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
+        models = expand("OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces),
+        X = expand("mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
         Y = expand("OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces)
     output:
         test_tab = "mcNemar_stackedV3neg_tab.tsv"
