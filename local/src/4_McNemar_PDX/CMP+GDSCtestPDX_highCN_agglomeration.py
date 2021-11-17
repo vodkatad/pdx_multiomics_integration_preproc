@@ -17,12 +17,13 @@ Y = pd.read_csv(f, sep="\t", index_col=1, header=0)
 # encode Cetuximab response as binary bar
 Y_class_dict={'PD':0,'SD':1, 'OR':1}
 Y[PDX_target_col] = Y[PDX_target_col].replace(Y_class_dict)
-PDX_test_models = Y[Y.is_test == True].index.unique()
+PDX_test_models = Y.index.unique()
 
 # load preprocessed PDX CN features (includes "high_CN" features)
 f = snakemake.input.PDX_cnv_pre
 PDX_features_in = pd.read_csv(f, sep='\t', index_col=0).\
     drop(PDX_target_col, axis=1)
+# use all PDX models 
 PDX_test_models = [m for m in PDX_test_models if m in PDX_features_in.index]
 PDX_X_test = PDX_features_in.loc[PDX_test_models, :]
 PDX_y_test = Y.loc[PDX_test_models, PDX_target_col]

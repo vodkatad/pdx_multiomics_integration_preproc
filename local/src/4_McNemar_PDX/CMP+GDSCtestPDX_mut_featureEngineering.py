@@ -62,10 +62,14 @@ PDX_all_df[feature_col] = PDX_all_df[feature_col].astype(float).\
 # drop duplicated instances (ircc_id) from index
 PDX_all_df = PDX_all_df[~PDX_all_df.index.duplicated(keep='first')]
 # train-test split
+# here concatenate PDX train and test X ioon order to transform 
+# both at the same time with the new CMP mutation features engineered from the 
+# CMP train set
 PDX_train_models = Y[Y.is_test == False].index.unique()
 PDX_test_models = Y[Y.is_test == True].index.unique()
-PDX_X_test = PDX_all_df.loc[PDX_test_models, feature_col]
-PDX_y_test = PDX_all_df.loc[PDX_test_models, target_col]
+PDX_all_models =  Y.index.unique() 
+PDX_X_test = PDX_all_df.loc[PDX_all_models, feature_col]
+PDX_y_test = PDX_all_df.loc[PDX_all_models, target_col]
 
 
 # load CMP mutation data
