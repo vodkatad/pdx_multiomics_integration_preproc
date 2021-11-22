@@ -172,9 +172,11 @@ L1LRelasticnetLR_pipe = Pipeline([
 ])
 # optimise L1 strictness, elasticnet L1 ratio
 hyperparameter_grid = {
-    'clf__l1_ratio':  np.linspace(.01, .9, 3, endpoint=True),
-    'trans__expr__estimator__C': np.linspace(.01, 10, 5, endpoint=True),
-    'trans__meth__estimator__C': np.linspace(.01, 10, 5, endpoint=True)}
+    # elasticnet l1 ratio
+    # l1_ratio=0 is equivalent to using penalty='l2', while setting l1_ratio=1 is equivalent to using penalty='l1'
+    'clf__l1_ratio':  np.linspace(.01, .9, 5, endpoint=True), 
+    'trans__expr__estimator__C': np.linspace(1, 50, 5, endpoint=True),
+    'trans__meth__estimator__C': np.linspace(1, 50, 5, endpoint=True)}
 
 # Set up the random search with 4-fold stratified cross validation
 skf = StratifiedKFold(n_splits=4, shuffle=True, random_state=42)
