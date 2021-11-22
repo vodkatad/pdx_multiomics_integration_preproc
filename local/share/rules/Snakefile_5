@@ -181,13 +181,13 @@ rule CMP_expr_merge:
                                          sep="\t", index_col=None)
         all_models = drug_response_data.SANGER_MODEL_ID.values
         CMP_target_col = params.target_col
-        Y = drug_response_data[['SANGER_MODEL_ID', 'is_test',
+        Y = drug_response_data[['SANGER_MODEL_ID',
                                 CMP_target_col]].\
             set_index('SANGER_MODEL_ID')
         # use the entire CMP dataset as train
         y_train = Y.loc[:, CMP_target_col]
         # load the CMP RNAseq fpkm data
-        f = snakemake.input.expr
+        f = input.expr
         CMP_expr = pd.read_csv(f).drop([0, 1, 2])
         CMP_expr = CMP_expr.rename(columns={'Unnamed: 1': 'gene_symbol'})
         # remove duplicate genes, filter for CRC models w/t cetuxi response
@@ -295,7 +295,7 @@ rule CMP_expr_FeatPreproc:
     log:
         "CMP_expr_featureEng.log"
     script:
-        srcdir+"/2d_PDx_DrugResponse_geneExpr_encodeHALLMARK+PROGENy.py"
+        srcdir+"/CMP+GDSC_geneExpr_encodeHALLMARK+PROGENy.py"
 
 # preprocess raw methylation data
 rule meth_FeatRaw:
@@ -339,6 +339,7 @@ rule clin_FeatPreproc:
         srcdir+"/2a_clinical_data.py"
 
 # stacked model training on the engineered PDX feature dataset
+# [mutation, CNV, methylation, expression, clinical]
 rule train_stacked:
     input:
         mut = "preproc_mut" + "{suffix}" + ".tsv",
@@ -528,6 +529,29 @@ rule mixOmics_validate:
         "perfByComp_DIABLO"+"{suffix}"+".log"
     script:
         srcdir+"/DIABLO_integrated_model_perf.R"
+
+# compute, visualise all model performance on the PDX test set across replicates
+rule vis_stacked_performanceCMPvPDX:
+    input:
+        CMP_model = ancient("OmicsBinary_StackingCVClassifier_CMP_mutCross+exprPROGENyHALLMARKS+highCNaggALL.pkl"),
+        PDX_models = ancient(expand(
+            "OmicsBinary_StackingCVClassifier_mutCross+exprPROGENyHALLMARKS+highCNagg{suffix}.pkl", suffix=split_indeces)),
+        X_PDX = expand(
+            "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
+        X_CMP = "PDX_mutCross+exprPROGENyHALLMARKS+highCNaggALL_Xtest.tsv",
+        Y = expand("OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces)
+    output:
+        performance_tab = protected(
+            "CMPvPDX_OmicsBinary_StackingCVClassifier_mutCross+exprPROGENyHALLMARKS+highCNagg_perfTab.tsv")
+        # AUCagg_plot = "OmicsBinary_StackingCVClassifier_mutCross+\
+        # clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_AUCagg.pdf",
+        # confMatrixAgg_plot = "OmicsBinary_StackingCVClassifier_mutCross+\
+        # clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_confMatrixAgg.pdf"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        model_name = 'StackingCVClassifier'
+    script:
+        srcdir+"/CMPvPDX_aggregate_AUC+confMatrix.py"
 
 # compute, visualise all model performance on the PDX test set across replicates
 rule vis_stacked_performance:
