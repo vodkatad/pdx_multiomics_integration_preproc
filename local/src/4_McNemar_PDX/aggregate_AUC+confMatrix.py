@@ -171,9 +171,9 @@ def evaluate_DIABLO(DIABLOPredFile, YtestFile):
     additionalRespond_ratio = tripleNegRespondPredicted_count / \
         RespondPredicted_count  # new predicted / previously predicted
 
-    return [model_name,
-            grid_test_score,
-            AUC,
+    return ['DIABLO_sPLS-DA',
+            test_accu,
+            DIABLO_AUC,
             additionalResist_ratio,
             tripleNegResistPredicted_count,
             additionalRespond_ratio,
