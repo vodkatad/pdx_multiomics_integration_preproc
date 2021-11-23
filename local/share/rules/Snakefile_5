@@ -383,6 +383,32 @@ rule augment_tripleNeg_train:
     script:
         "../../local/src/5_McNemar_PDX_30x/tripleNeg_augmentation.py" 
 
+# stacked model training on the tripleNeg augmented dataset
+rule train_stacked_augment_tripleNeg:
+    input:
+        mut = "preproc_mut" + "{suffix}" + ".tsv",
+        cnv = "preproc_CNV.tsv",
+        expr = "preproc_expr"+"{suffix}"+".tsv",
+        meth = "preproc_meth"+"{suffix}"+".tsv",
+        clin = "preproc_clin"+"{suffix}"+".tsv",
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
+        X_train_resampled = "Cetuximab+tripleNegResampled_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv",
+        Y_train_resampled = "Cetuximab+tripleNegResampled_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Ytrain.tsv"
+    output:
+        X_test = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv",
+        Y_test = "OmicsBinary{suffix}_Ytest.tsv",
+        best_model = protected(
+            "Cetuximab+tripleNegResampled_OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl") 
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    threads: 4
+    log:
+        "Cetuximab+tripleNegResampled_stacked_input{suffix}.log",
+        "Cetuximab+tripleNegResampled_stacked_fullTrain{suffix}.log",
+        "Cetuximab+tripleNegResampled_stacked_bestModelSummary{suffix}.log"
+    script:
+        srcdir + "/Cetuximab+tripleNegResampled_OMICS_stacking_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
+
 # stacked model training on the Mut-CNV-Expr PDX engineered feature dataset
 rule train_mutCNVexpr_stacked:
     input:
