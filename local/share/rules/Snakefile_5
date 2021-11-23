@@ -365,6 +365,24 @@ rule train_stacked:
     script:
         srcdir + "/OMICS_stacking_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
 
+# data augmentation using SMOTE by oversampling:
+#   - KRAS-NRAS-BRAF_tripleNeg==1 + non-responders 
+#   - KRAS-NRAS-BRAF_tripleNeg==0 + responders 
+rule augment_tripleNeg_train:
+    input:
+        X_train = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv",
+        tripleNeg = "preproc_mut0.tsv",
+        response = "DrugResponse_LMXfirslevel_trainTest{suffix}.tsv"
+    output:
+        X_train_resampled = "Cetuximab+tripleNegResampled_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv",
+        Y_train_resampled = "Cetuximab+tripleNegResampled_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Ytrain.tsv" 
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    log:
+        "augment_tripleNeg_train{suffix}.log"
+    script:
+        "../../local/src/5_McNemar_PDX_30x/tripleNeg_augmentation.py" 
+
 # stacked model training on the Mut-CNV-Expr PDX engineered feature dataset
 rule train_mutCNVexpr_stacked:
     input:
