@@ -141,10 +141,6 @@ with open(logfile, "a") as log:
     log.write(f"There are {CNV.shape[1]} copy number features."+ '\n')
     log.write(f"There are {Clin.shape[1]} clinical features."+ '\n') 
 
-# write test sets to file
-X_test.to_csv(snakemake.output.X_test, sep='\t')
-y_test.to_csv(snakemake.output.Y_test, sep='\t')
-
 # build stacked model pipeline
 # pipeline to train a classifier on meth data alone
 pipe_steps = [

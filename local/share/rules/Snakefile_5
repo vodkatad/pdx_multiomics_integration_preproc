@@ -395,8 +395,6 @@ rule train_stacked_augment_tripleNeg:
         X_train_resampled = "Cetuximab+tripleNegResampled_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv",
         Y_train_resampled = "Cetuximab+tripleNegResampled_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Ytrain.tsv"
     output:
-        X_test = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv",
-        Y_test = "OmicsBinary{suffix}_Ytest.tsv",
         best_model = protected(
             "Cetuximab+tripleNegResampled_OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl") 
     params:
@@ -602,16 +600,24 @@ rule vis_stacked_performance:
     input:
         tripleNeg = 'preproc_mut0.tsv',
         stacked_models = ancient(expand(
-            "OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", suffix=split_indeces)),
+            "OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl", 
+            suffix=split_indeces)),
         rawL1elasticnet_models = ancient(expand(
-            "OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl", suffix=split_indeces)),
+            "OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl", 
+            suffix=split_indeces)),
         DIABLOsPLSDA_pred = ancient(expand(
             "PDx_IntegratedTunedDIABLO_testPred"+"{suffix}"+".tsv", suffix=split_indeces)),
+        tripleNegResample_stacked = ancient(expand(
+            "Cetuximab+tripleNegResampled_OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl",
+             suffix=split_indeces)),
         X_eng = expand(
-            "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", suffix=split_indeces),
+            "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv", 
+            suffix=split_indeces),
         X_raw = expand(
-            "mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv", suffix=split_indeces),
-        Y = expand("OmicsBinary{suffix}_Ytest.tsv", suffix=split_indeces)
+            "mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv", 
+            suffix=split_indeces),
+        Y = expand("OmicsBinary{suffix}_Ytest.tsv", 
+            suffix=split_indeces)
     output:
         performance_tab = protected(
             "OmicsBinary_StackingCVClassifier_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster_perfTab.tsv")
