@@ -3,8 +3,12 @@ datadir = config["PRJ_ROOT"] + config["DATA_DIR"]
 srcdir = config["SRC"]
 n_splits = int(config['N_SPLITS'])
 split_indeces = [str(i) for i in range(n_splits)]
+upsampling_pct = [10,20,50,100]
+downsampling_pct = [10, 20, 50, 75]
 wildcard_constraints:
-    suffix = "\d+"
+    suffix = "\d+",
+    pct = "\d+"
+
 
 # map different PDx model ids
 # merge with PDX Cetuximab response data (tomour volume), encode target variable
@@ -53,6 +57,7 @@ rule CN_FeatPreproc:
         preproc_CNV = "preproc_CNV.tsv"
     params:
         target_col = "Cetuximab_Standard_3wks_cat",
+        strict_TCGA_filter=False,
         loss_thr = -.2,
         gain_thr = .1,
         high_gain_thr = .75
@@ -90,6 +95,7 @@ rule mut_FeatPreproc:
         preproc_mut = "preproc_mut" + "{suffix}" + ".tsv"
     params:
         raw = False,
+        driver_filter = True, 
         target_col = "Cetuximab_Standard_3wks_cat",
         univ_ptl = "75%"  # select top Kth features for combos
     script:
@@ -103,7 +109,8 @@ rule mut_FeatRaw:
     output:
         raw_mut = "raw_mut.tsv"
     params:
-        raw = True,
+        raw = True, # no feature crosses
+        driver_filter = False, # no driver annot filter
         target_col = "Cetuximab_Standard_3wks_cat",
         univ_ptl = "75%"  # select top Kth features for combos
     script:
@@ -364,6 +371,45 @@ rule train_stacked:
         "stacked_bestModelSummary{suffix}.log"
     script:
         srcdir + "/OMICS_stacking_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
+
+rule eng_UpSample_train:
+    input:
+        X_train = ancient("mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv"),
+        response = "DrugResponse_LMXfirslevel_trainTest{suffix}.tsv"
+    output:
+        X_outfile = "CetuximabUpsampled{up_pct}_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv",
+        Y_outfile = "CetuximabUpsampled{up_pct}_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Ytrain.tsv",
+    log:
+        "eng_UpSample{up_pct}_train{suffix}.log"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        direction= 'up',
+        pct = "{up_pct}"
+    script:
+        "../../local/src/5_McNemar_PDX_30x/train_downUpsampling.py" 
+
+rule eng_DownSample_train:
+    input:
+        X_train = ancient("mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv"),
+        response = "DrugResponse_LMXfirslevel_trainTest{suffix}.tsv"
+    output:
+        X_outfile = "CetuximabDownsampled{down_pct}_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv",
+        Y_outfile = "CetuximabDownsampled{down_pct}_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Ytrain.tsv",
+    log:
+        "eng_DownSample{down_pct}_train{suffix}.log"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat",
+        direction= 'down',
+        pct = "{down_pct}"
+    script:
+        "../../local/src/5_McNemar_PDX_30x/train_downUpsampling.py" 
+
+rule eng_upDownSample:
+    input: 
+        expand("CetuximabUpsampled{up_pct}_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv",
+            up_pct=upsampling_pct, suffix=split_indeces),
+        expand("CetuximabDownsampled{down_pct}_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtrain.tsv", 
+            down_pct=downsampling_pct, suffix=split_indeces)
 
 # data augmentation using SMOTE by oversampling:
 #   - KRAS-NRAS-BRAF_tripleNeg==1 + non-responders 
