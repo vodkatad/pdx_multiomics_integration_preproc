@@ -582,6 +582,30 @@ rule train_rawL1elasticnet:
     script:
         srcdir + "/OMICS_rawL1elasticnet_binary_clin+exprRaw+highCN+MethRaw.py"
 
+rule train_handpickedElasticnet:
+    input:
+        mut = ancient("raw_mut.tsv"),
+        cnv = ancient("preproc_CNV.tsv"),
+        expr = ancient("expr_merge.tsv"),
+        meth = ancient("raw_meth.tsv"),
+        clin = ancient("preproc_clin"+"{suffix}"+".tsv"),
+        response = ancient(
+            "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv")
+    output:
+        X_train = "handpickedElasticnet{suffix}_Xtrain.tsv",
+        X_test = "handpickedElasticnet{suffix}_Xtest.tsv",
+        best_model = protected(
+            "OmicsBinary_handpickedElasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl")
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    threads: 4
+    log:
+        "handpickedElasticnett_input{suffix}.log",
+        "handpickedElasticnet_fullTrain{suffix}.log",
+        "handpickedElasticnet_bestModelSummary{suffix}.log"
+    script:
+       "../../local/src/5_McNemar_PDX_30x/OMICS_hanpickedFeaturesLR_binary_clin+exprRaw+highCN+MethRaw.py"
+
 # slice mixOmics train/test input, normalise
 # perform L1-pealised (lasso-like) feature selection on meth/expr
 rule mixOmics_pre:
