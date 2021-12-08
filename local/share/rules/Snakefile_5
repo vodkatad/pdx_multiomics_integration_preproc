@@ -582,6 +582,36 @@ rule train_rawL1elasticnet:
     script:
         srcdir + "/OMICS_rawL1elasticnet_binary_clin+exprRaw+highCN+MethRaw.py"
 
+# stacked model training on the engineered PDX feature dataset
+# [mutation, CNV, methylation, expression, clinical] 
+# + L1elasticnet training on raw meth, expr features 
+rule train_stackedRawL1elasticnet:
+    input:
+        mut = "preproc_mut" + "{suffix}" + ".tsv",
+        cnv = "preproc_CNV.tsv",
+        expr = "preproc_expr"+"{suffix}"+".tsv",
+        meth = "preproc_meth"+"{suffix}"+".tsv",
+        clin = "preproc_clin"+"{suffix}"+".tsv",
+        raw_expr = ancient("expr_merge.tsv"),
+        raw_meth = ancient("raw_meth.tsv"),
+        response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv"
+    output:
+        X_train = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster+rawExpr+rawMeth{suffix}_Xtrain.tsv",
+        X_test = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster+rawExpr+rawMeth{suffix}_Xtest.tsv",
+        best_model = protected(
+            "OmicsBinary_StackingCVC+RawL1elasticnet_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}.pkl")
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    threads: 4
+    log:
+        "stackedRawL1elasticnet_input{suffix}.log",
+        "stackedRawL1elasticnet_fullTrain{suffix}.log",
+        "stackedRawL1elasticnet_bestModelSummary{suffix}.log"
+    script:
+        srcdir + "/OMICS_stackedRawL1elasticnet_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster+rawExpr+rawMeth.py"
+
+
+
 rule train_handpickedElasticnet:
     input:
         mut = ancient("raw_mut.tsv"),
@@ -754,6 +784,9 @@ rule vis_stacked_performance:
         rawL1elasticnet_models = ancient(expand(
             "OmicsBinary_rawL1elasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl",
             suffix=split_indeces)),
+        handpickedElasticnet = ancient(expand(
+            "OmicsBinary_handpickedElasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl",
+            suffix=split_indeces)),
         DIABLOsPLSDA_pred = ancient(expand(
             "PDx_IntegratedTunedDIABLO_testPred"+"{suffix}"+".tsv", suffix=split_indeces)),
         tripleNegResample_stacked = ancient(expand(
@@ -765,6 +798,9 @@ rule vis_stacked_performance:
         X_raw = expand(
             "mut+clin+rawExpr+highCNagg+rawMeth{suffix}_Xtest.tsv",
             suffix=split_indeces),
+        X_handpicked = expand(
+            "handpickedElasticnet{suffix}_Xtest.tsv",
+        suffix=split_indeces),
         Y = expand("OmicsBinary{suffix}_Ytest.tsv",
                    suffix=split_indeces)
     output:
