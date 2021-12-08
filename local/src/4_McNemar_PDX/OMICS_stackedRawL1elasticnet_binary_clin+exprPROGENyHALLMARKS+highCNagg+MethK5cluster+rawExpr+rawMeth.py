@@ -59,13 +59,13 @@ Expr = Expr[Expr.columns.drop(list(Expr.filter(regex='Cetuximab')))]
 Expr.columns = [c + "_expr" for c in Expr.columns]
 
 # raw methylation probes data
-f = snakemake.input.meth
+f = snakemake.input.raw_meth
 rawMeth = pd.read_csv(f, sep="\t", header=0, index_col=0)
 rawMeth = rawMeth[rawMeth.columns.drop(
     list(rawMeth.filter(regex='Cetuximab')))]
 rawMeth.columns = [c+"_rawMeth" for c in rawMeth.columns]
 # raw expression data (variance-stabilised RNAseq)
-f = snakemake.input.expr
+f = snakemake.input.raw_expr
 rawExpr = pd.read_csv(f, sep="\t", header=0, index_col=0)
 rawExpr = rawExpr[rawExpr.columns.drop(
     list(rawExpr.filter(regex='Cetuximab')))]
@@ -104,6 +104,8 @@ all_df = pd.merge(all_df, rawExpr, right_index=True,
                   left_index=True, how="outer")
 all_df = pd.merge(all_df, rawMeth, right_index=True,
                   left_index=True, how="outer")
+all_df = all_df[all_df.columns.drop(
+    list(all_df.filter(regex='ircc_id')))]
 feature_col = all_df.columns.tolist()
 all_df = all_df.select_dtypes([np.number])
 all_df = pd.merge(all_df, Y[target_col],
@@ -265,10 +267,10 @@ hyperparameter_grid = {
     'pipeline-2__RFClassifier__n_estimators': [15],
     'pipeline-2__RFClassifier__max_depth': [11],
     # rawExpr pipeline
-    'pipeline-3__L1Selector__estimator__C': np.linspace(5, 70, 5, endpoint=True),
-    'pipeline-3__elasticNetClassifier__l1_ratio': np.linspace(.01, .9, 5, endpoint=True),
-    'pipeline-4__L1Selector__estimator__C': np.linspace(5, 70, 5, endpoint=True),
-    'pipeline-4__elasticNetClassifier__l1_ratio': np.linspace(.01, .9, 5, endpoint=True),
+    'pipeline-3__L1Selector__estimator__C': np.linspace(5, 70, 3, endpoint=True),
+    'pipeline-3__elasticNetClassifier__l1_ratio': np.linspace(.01, .9, 3, endpoint=True),
+    'pipeline-4__L1Selector__estimator__C': np.linspace(5, 70, 3, endpoint=True),
+    'pipeline-4__elasticNetClassifier__l1_ratio': np.linspace(.01, .9, 3, endpoint=True),
     # Mut params
     'pipeline-5__chi2filterFscore__k': [50, 'all'],
     'pipeline-5__RFClassifier__max_features': [.2],
