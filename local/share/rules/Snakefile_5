@@ -610,8 +610,8 @@ rule train_stackedRawL1elasticnet:
     script:
         srcdir + "/OMICS_stackedRawL1elasticnet_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster+rawExpr+rawMeth.py"
 
-
-
+# train an elasticnet model with handpicked features
+# based on known Cetuximab response biomarkers in CRC
 rule train_handpickedElasticnet:
     input:
         mut = ancient("raw_mut.tsv"),
@@ -635,6 +635,29 @@ rule train_handpickedElasticnet:
         "handpickedElasticnet_bestModelSummary{suffix}.log"
     script:
        "../../local/src/5_McNemar_PDX_30x/OMICS_hanpickedFeaturesLR_binary_clin+exprRaw+highCN+MethRaw.py"
+
+# train an elasticnet model using KRAS;NRAS;BRAF
+# as distinct binary features w/t combining into 
+# a triple neg feature
+rule train_KNBrasElasticnet:
+    input:
+        mut = ancient("raw_mut.tsv"),
+        response = ancient(
+            "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv")
+    output:
+        X_train="KNBrasElasticnet{suffix}_Xtrain.tsv",
+        X_test="KNBrasElasticnet{suffix}_Xtest.tsv",
+        best_model = protected(
+            "OmicsBinary_KNBrasElasticnet_mutRaw{suffix}.pkl")
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    threads: 4
+    log:
+        "KNBrasElasticnet_input{suffix}.log",
+        "KNBrasElasticnet_fullTrain{suffix}.log",
+        "KNBrasElasticnet_bestModelSummary{suffix}.log"
+    script:
+        "../../local/src/5_McNemar_PDX_30x/OMICS_KNBrasElasticnet_binary_MethRaw.py"
 
 # slice mixOmics train/test input, normalise
 # perform L1-pealised (lasso-like) feature selection on meth/expr
@@ -787,6 +810,9 @@ rule vis_stacked_performance:
         handpickedElasticnet = ancient(expand(
             "OmicsBinary_handpickedElasticnet_clin+exprRaw+highCN+MethRaw{suffix}.pkl",
             suffix=split_indeces)),
+        KNBrasElasticnet = ancient(expand(
+            "OmicsBinary_KNBrasElasticnet_mutRaw{suffix}.pkl",
+            suffix=split_indeces)), 
         DIABLOsPLSDA_pred = ancient(expand(
             "PDx_IntegratedTunedDIABLO_testPred"+"{suffix}"+".tsv", suffix=split_indeces)),
         tripleNegResample_stacked = ancient(expand(
@@ -800,6 +826,9 @@ rule vis_stacked_performance:
             suffix=split_indeces),
         X_handpicked = expand(
             "handpickedElasticnet{suffix}_Xtest.tsv",
+            suffix=split_indeces),
+        X_KNBras = expand(
+            "KNBrasElasticnet{suffix}_Xtest.tsv",
         suffix=split_indeces),
         Y = expand("OmicsBinary{suffix}_Ytest.tsv",
                    suffix=split_indeces)

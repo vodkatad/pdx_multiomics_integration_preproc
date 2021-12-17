@@ -140,10 +140,10 @@ def evaluate_DIABLO(DIABLOPredFile, YtestFile):
                                  index=['true_PD', 'true_SD-OR']).stack()
     confMatrix_df.index = [
         '__'.join(ix) for ix in confMatrix_df.index]
-    # use binary prediction as prediction proba for AUC calc 
+    # use binary prediction as prediction proba for AUC calc
     predict_proba = DIABLOPred
     DIABLO_AUC = roc_auc_score(y_test, predict_proba)
-    
+
     # evaluate model perfomance on clinically relevant subgroup of models
     # aka KRAS-BRAF-NRAS triple negative;
     # merge KRAS-NRAS-BRAF predictions, DIABLO prediction, truth
@@ -184,15 +184,35 @@ tab_arr = []
 split_index = 0
 for tupla in zip(snakemake.input.stacked_models,
                  snakemake.input.rawL1elasticnet_models,
+                 snakemake.input.handpickedElasticnet,
+                 snakemake.input.KNBrasElasticnet,
                  snakemake.input.DIABLOsPLSDA_pred,
+                 snakemake.input.tripleNegResample_stacked,
                  snakemake.input.X_eng,
                  snakemake.input.X_raw,
+                 snakemake.input.X_handpicked,
+                 snakemake.input.X_KNBras,
                  snakemake.input.Y):
-    stackedFile, elasticFile, DIABLOPredFile, XtestFile_eng, XtestFile_raw, YtestFile = tupla
-    tab_arr.append([split_index] + evaluate_model(stackedFile,
-                                                  XtestFile_eng, YtestFile, 'stackedCVClassifier'))
-    tab_arr.append([split_index] + evaluate_model(elasticFile,
-                                                  XtestFile_raw, YtestFile, 'rawL1elasticnet'))
+    stackedFile, elasticFile, handpickedElastiFile,\
+         KNBrasElasticFile, DIABLOPredFile, \
+        resampledStackedFile, XtestFile_eng, \
+        XtestFile_raw, XtestFile_handpicked, \
+            XtestFile_KNBras, YtestFile = tupla
+    tab_arr.append([split_index] +
+                   evaluate_model(stackedFile,
+                                  XtestFile_eng, YtestFile, 'stackedCVClassifier'))
+    tab_arr.append([split_index] +
+                   evaluate_model(handpickedElastiFile,
+                                  XtestFile_handpicked, YtestFile, 'handpickedElasticnet'))
+    tab_arr.append([split_index] +
+                   evaluate_model(KNBrasElasticFile,
+                                  XtestFile_KNBras, YtestFile, 'KNBrasElasticnet'))
+    tab_arr.append([split_index] +
+                   evaluate_model(elasticFile,
+                                  XtestFile_raw, YtestFile, 'rawL1elasticnet'))
+    tab_arr.append([split_index] +
+                   evaluate_model(resampledStackedFile,
+                                  XtestFile_eng, YtestFile, 'tripleNegResample_stackedCVClassifier'))
     tab_arr.append([split_index] +
                    evaluate_tripleNeg(XtestFile_eng, YtestFile))
     tab_arr.append([split_index] +
@@ -205,7 +225,7 @@ out_tab = pd.DataFrame(tab_arr, columns=["split_index", 'model_name',
                                          "additionalResistVStripleNeg_count",
                                          'additionalRespondVStripleNeg_ratio',
                                          "additionalRespondVStripleNeg_count"] + ['true_PD__pred_PD',
-                                                   'true_PD__pred_SD-OR',
-                                                   'true_SD-OR__pred_PD',
-                                                   'true_SD-OR__pred_SD-OR'])
+                                                                                  'true_PD__pred_SD-OR',
+                                                                                  'true_SD-OR__pred_PD',
+                                                                                  'true_SD-OR__pred_SD-OR'])
 out_tab.to_csv(snakemake.output.performance_tab, sep='\t')
