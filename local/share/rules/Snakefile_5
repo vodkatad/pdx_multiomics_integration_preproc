@@ -166,6 +166,27 @@ rule mut_FeatPreprocCMP:
     script:
         srcdir+"/CMP+GDSCtestPDX_mut_featureEngineering.py"
 
+# Charles Rivers mutation dataset preprocessing
+# & feature crosses (2,3 combos) for top chi2 features
+rule CR_mut_FeatPreproc:
+    input:
+        PDX_response = 'DrugResponse_LMXfirslevel_trainTest' + "{suffix}" + '.tsv',
+        CR_meta = datadir + "/CharlesRiver/metadata_charlesriver.tsv",
+        CR_idTab = datadir + "/CharlesRiver/Charles_River_decode.txt",
+        PDX_mut = datadir+"/Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt",
+        PDX_preproc_mut =  "preproc_mut" + "{suffix}" + ".tsv",
+        CR_mut = datadir+"/CharlesRiver/Coding_variants.charles.river.74.samples.annotated.09Jan2022.txt"
+    output:
+        preproc_mut = "CR_preproc_mut" + "{suffix}" + ".tsv"
+    params:
+        raw = False,
+        PDX_target_col = "Cetuximab_Standard_3wks_cat",
+        CR_target_col = "cetuxi_recist",
+        univ_ptl = "75%"  # select top Kth features for combos
+    script:
+        srcdir+"/CR_mut_featureEngineering.py"
+
+
 # merge PDX RNAseq data, genealogy, output raw expression features
 rule expr_merge:
     input:
@@ -374,24 +395,17 @@ rule CMP_expr_FeatPreproc:
 # merge with PDX train set
 rule CR_expr_FeatPreproc:
     input:
-        PDX_response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
-        PDX_progeny_train = "progeny_train0.tsv",
-        PDX_progeny_test = "progeny_test0.tsv",
-        PDX_hallmarks_test = datadir+"/ssGSEA_"+str(config['N_SPLITS'])+"fold/" + str(
-            config['N_SPLITS']) + "-0_LMXfirstlevel_test_h-scores.tsv",
-        PDX_hallmarks_train = datadir+"/ssGSEA_"+str(config['N_SPLITS'])+"fold/" + str(
-            config['N_SPLITS']) + "-0_LMXfirstlevel_train_h-scores.tsv",
+        PDX_preproc_expr = "preproc_expr"+"{suffix}"+".tsv",
         CR_response = rules.CR_response_pre.output.CR_response,
         CR_progeny = rules.CR_calc_progeny.output.progeny_scores,
         CR_hallmarks = datadir+"/CharlesRiver/CharlesRiver_RNAseq_v1/h-scores.tsv"
     output:
-        preproc_expr = "CR_preproc_expr.tsv"
+        preproc_expr = "CR_preproc_expr"+"{suffix}"+".tsv"
     params:
         PDX_target_col = "Cetuximab_Standard_3wks_cat",
-        CR_target_col = "cetuxi_recist",
-        corr_thrs = .7
+        CR_target_col = "cetuxi_recist"
     log:
-        "CR_expr_featureEng.log"
+        "CR_expr_featureEng"+"{suffix}"+".log"
     script:
         srcdir+"/CR_geneExpr_encodeHALLMARK+PROGENy.py"
 
