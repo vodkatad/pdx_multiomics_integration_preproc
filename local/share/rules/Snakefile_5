@@ -1,4 +1,4 @@
-configfile: './config'
+configfile : './config'
 datadir = config["PRJ_ROOT"] + config["DATA_DIR"]
 srcdir = config["SRC"]
 n_splits = int(config['N_SPLITS'])
@@ -37,10 +37,42 @@ rule CMP_response_pre:
         GDSC1 = datadir + "/GDSC/GDSC1_fitted_dose_response_25Feb20.csv",
         GDSC2 = datadir + '/GDSC/GDSC2_fitted_dose_response_25Feb20.csv'
     output:
-        protected("DrugResponse_CMP+GDSC_CRCcetuximab_ALL.csv")
+        CMP_response = protected("DrugResponse_CMP+GDSC_CRCcetuximab_ALL.csv")
     script:
         srcdir+'/CMP+GDSC_CRCcetuximab_responsePre.py'
 
+# map Charles River model ids to Cetuximab response
+# already binned into (PD, SD, OR) classes
+rule CR_response_pre:
+    input:
+        CR_meta = datadir + "/CharlesRiver/metadata_charlesriver.tsv",
+        CR_idTab = datadir + "/CharlesRiver/Charles_River_decode.txt"
+    output:
+        CR_response = protected("DrugResponse_CR_Cetuximab.csv")
+    params:
+        target_col = "cetuxi_recist"
+    run:
+        import pandas as pd
+        # load CR id conversion tab (CR/Sanger)
+        f = input.CR_idTab
+        CR_idTab = pd.read_csv(f, sep="\t", header=0)
+        # format CR id as in mut table
+        CR_idTab["short_CR_id"] =CR_idTab.sample_ID_in_COSMIC.\
+            str.split("_").apply(lambda x:"_".join(x[:3]))
+        # load CR Cetuximab response
+        f = input.CR_meta
+        CR_meta = pd.read_csv(f, sep="\t", header=0)
+
+        # add CR ids to CR Cetuximab response
+        # via Sanger Ids
+        CR_meta = pd.merge(
+            CR_idTab,
+            CR_meta,
+            left_on="short_CR_id",
+            right_on="id")[
+                ["short_CR_id",
+                params.target_col]].dropna()
+        CR_meta.to_csv(output[0], sep='\t')
 
 # copy number data preprocessing, feature engineering
 # these gain/loss thresholds are fairly conservative for PDXs (low impurity)
@@ -187,7 +219,7 @@ rule CMP_expr_merge:
         drug_response_data = pd.read_csv(input.response,
                                          sep="\t", index_col=None)
         all_models = drug_response_data.SANGER_MODEL_ID.values
-        CMP_target_col = params.target_col
+
         Y = drug_response_data[['SANGER_MODEL_ID',
                                 CMP_target_col]].\
             set_index('SANGER_MODEL_ID')
@@ -215,6 +247,38 @@ rule CMP_calc_progeny:
     output:
         progeny_scores = "CMP_progeny_ALL.tsv"
     script:
+        srcdir+"/CMP_progeny_SamplePathActivity.R"
+
+# prepare PROGENY input from Charles River
+# RNAseq data
+rule CR_expr_merge:
+    input:
+        CR_response = rules.CR_response_pre.output.CR_response,
+        CR_expr = datadir + "/CharlesRiver/CharlesRiver_RNAseq_v1/vsd_H.tsv"
+    output:
+            expr_merge = "CR_expr_merge.tsv"
+    params:
+            target_col = "cetuxi_recist"
+    run:
+        import pandas as pd
+        CR_response = pd.read_csv(input.CR_response,
+            sep='\t')
+        # use all CR dataset as test,
+        # filter out any PDX w/t missing Cetuxi response
+        test_models = CR_response.short_CR_id.unique() 
+        CR_expr = pd.read_csv(input.CR_expr,
+                            sep='\t')[test_models]
+        CR_expr.to_csv(output.expr_merge, sep='\t')
+
+# calc PROGENy scores for all Charles River models
+rule CR_calc_progeny:
+    input:
+        expr = rules.CR_expr_merge.output.expr_merge
+    output:
+        progeny_scores = "CR_progeny_ALL.tsv"
+    script:
+        # can use same script as CMP as we are computing
+        # these scores over the entire CR dataset
         srcdir+"/CMP_progeny_SamplePathActivity.R"
 
 # preprocess variance stabilised RNAseq expression
@@ -305,6 +369,31 @@ rule CMP_expr_FeatPreproc:
         "CMP_expr_featureEng.log"
     script:
         srcdir+"/CMP+GDSC_geneExpr_encodeHALLMARK+PROGENy.py"
+
+# preprocess Charles Rivers ssGSEA Hallmarks and PROGENy scores,
+# merge with PDX train set
+rule CR_expr_FeatPreproc:
+    input:
+        PDX_response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
+        PDX_progeny_train = "progeny_train0.tsv",
+        PDX_progeny_test = "progeny_test0.tsv",
+        PDX_hallmarks_test = datadir+"/ssGSEA_"+str(config['N_SPLITS'])+"fold/" + str(
+            config['N_SPLITS']) + "-0_LMXfirstlevel_test_h-scores.tsv",
+        PDX_hallmarks_train = datadir+"/ssGSEA_"+str(config['N_SPLITS'])+"fold/" + str(
+            config['N_SPLITS']) + "-0_LMXfirstlevel_train_h-scores.tsv",
+        CR_response = rules.CR_response_pre.output.CR_response,
+        CR_progeny = rules.CR_calc_progeny.output.progeny_scores,
+        CR_hallmarks = datadir+"/CharlesRiver/CharlesRiver_RNAseq_v1/h-scores.tsv"
+    output:
+        preproc_expr = "CR_preproc_expr.tsv"
+    params:
+        PDX_target_col = "Cetuximab_Standard_3wks_cat",
+        CR_target_col = "cetuxi_recist",
+        corr_thrs = .7
+    log:
+        "CR_expr_featureEng.log"
+    script:
+        srcdir+"/CR_geneExpr_encodeHALLMARK+PROGENy.py"
 
 # preprocess raw methylation data
 rule meth_FeatRaw:
