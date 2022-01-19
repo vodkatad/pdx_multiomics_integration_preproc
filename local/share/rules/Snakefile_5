@@ -1,4 +1,4 @@
-configfile : './config'
+configfile: './config'
 datadir = config["PRJ_ROOT"] + config["DATA_DIR"]
 srcdir = config["SRC"]
 n_splits = int(config['N_SPLITS'])
@@ -57,8 +57,8 @@ rule CR_response_pre:
         f = input.CR_idTab
         CR_idTab = pd.read_csv(f, sep="\t", header=0)
         # format CR id as in mut table
-        CR_idTab["short_CR_id"] =CR_idTab.sample_ID_in_COSMIC.\
-            str.split("_").apply(lambda x:"_".join(x[:3]))
+        CR_idTab["short_CR_id"] = CR_idTab.sample_ID_in_COSMIC.\
+            str.split("_").apply(lambda x: "_".join(x[:3]))
         # load CR Cetuximab response
         f = input.CR_meta
         CR_meta = pd.read_csv(f, sep="\t", header=0)
@@ -71,7 +71,7 @@ rule CR_response_pre:
             left_on="short_CR_id",
             right_on="id")[
                 ["short_CR_id",
-                params.target_col]].dropna()
+                 params.target_col]].dropna()
         CR_meta.to_csv(output[0], sep='\t')
 
 # copy number data preprocessing, feature engineering
@@ -170,12 +170,14 @@ rule mut_FeatPreprocCMP:
 # & feature crosses (2,3 combos) for top chi2 features
 rule CR_mut_FeatPreproc:
     input:
-        PDX_response = 'DrugResponse_LMXfirslevel_trainTest' + "{suffix}" + '.tsv',
+        PDX_response = 'DrugResponse_LMXfirslevel_trainTest' + \
+            "{suffix}" + '.tsv',
         CR_meta = datadir + "/CharlesRiver/metadata_charlesriver.tsv",
         CR_idTab = datadir + "/CharlesRiver/Charles_River_decode.txt",
         PDX_mut = datadir+"/Driver_Annotation/CodingVariants_All669PDX_samples_26Feb2020_annotated_drivers_shortVersionForPDXfinder_EK.txt",
-        PDX_preproc_mut =  "preproc_mut" + "{suffix}" + ".tsv",
-        CR_mut = datadir+"/CharlesRiver/Coding_variants.charles.river.74.samples.annotated.09Jan2022.txt"
+        PDX_preproc_mut = "preproc_mut" + "{suffix}" + ".tsv",
+        CR_mut = datadir + \
+            "/CharlesRiver/Coding_variants.charles.river.74.samples.annotated.09Jan2022.txt"
     output:
         preproc_mut = "CR_preproc_mut" + "{suffix}" + ".tsv"
     params:
@@ -277,18 +279,18 @@ rule CR_expr_merge:
         CR_response = rules.CR_response_pre.output.CR_response,
         CR_expr = datadir + "/CharlesRiver/CharlesRiver_RNAseq_v1/vsd_H.tsv"
     output:
-            expr_merge = "CR_expr_merge.tsv"
+        expr_merge = "CR_expr_merge.tsv"
     params:
-            target_col = "cetuxi_recist"
+        target_col = "cetuxi_recist"
     run:
         import pandas as pd
         CR_response = pd.read_csv(input.CR_response,
-            sep='\t')
+                                  sep='\t')
         # use all CR dataset as test,
         # filter out any PDX w/t missing Cetuxi response
-        test_models = CR_response.short_CR_id.unique() 
+        test_models = CR_response.short_CR_id.unique()
         CR_expr = pd.read_csv(input.CR_expr,
-                            sep='\t')[test_models]
+                              sep='\t')[test_models]
         CR_expr.to_csv(output.expr_merge, sep='\t')
 
 # calc PROGENy scores for all Charles River models
@@ -436,6 +438,34 @@ rule meth_FeatPreproc:
         target_col = "Cetuximab_Standard_3wks_cat"
     script:
         srcdir+"/2e_PDx_Meth_probeK5Cluster.py"
+
+# generate 0ed featuresfor CR pre-clusterd (K=5) methylation probes data
+rule CR_meth_FeatPreproc:
+    input:
+        CR_response = rules.CR_response_pre.output.CR_response,
+        PDX_preproc_meth = "preproc_meth"+"{suffix}"+".tsv"
+    output:
+        CR_preproc_meth = protected("CR_preproc_meth"+"{suffix}"+".tsv")
+    params:
+        target_col = "cetuxi_recist"
+    run:
+        import pandas as pd
+        import numpy as np
+            
+        f = input.PDX_preproc_meth
+        PDX_preproc_meth = pd.read_csv(f, sep='\t').\
+            set_index("ircc_id")
+        meth_features = PDX_preproc_meth.columns.tolist()
+
+        f = input.CR_response
+        CR_response = pd.read_csv(f, sep='\t').\
+            set_index('short_CR_id')
+        zero_arr = np.zeros((len(CR_response), 
+            len(meth_features)), dtype=int)
+        CR_preproc_meth = pd.DataFrame(zero_arr, 
+            columns=meth_features,
+            index=CR_response.index)
+        CR_preproc_meth.to_csv(output.CR_preproc_meth, sep='\t') 
 
 # clean, preprocess on clinical data (origin patient)
 rule clin_FeatPreproc:
@@ -686,8 +716,8 @@ rule train_rawL1elasticnet:
         srcdir + "/OMICS_rawL1elasticnet_binary_clin+exprRaw+highCN+MethRaw.py"
 
 # stacked model training on the engineered PDX feature dataset
-# [mutation, CNV, methylation, expression, clinical] 
-# + L1elasticnet training on raw meth, expr features 
+# [mutation, CNV, methylation, expression, clinical]
+# + L1elasticnet training on raw meth, expr features
 rule train_stackedRawL1elasticnet:
     input:
         mut = "preproc_mut" + "{suffix}" + ".tsv",
@@ -737,10 +767,10 @@ rule train_handpickedElasticnet:
         "handpickedElasticnet_fullTrain{suffix}.log",
         "handpickedElasticnet_bestModelSummary{suffix}.log"
     script:
-       "../../local/src/5_McNemar_PDX_30x/OMICS_hanpickedFeaturesLR_binary_clin+exprRaw+highCN+MethRaw.py"
+        "../../local/src/5_McNemar_PDX_30x/OMICS_hanpickedFeaturesLR_binary_clin+exprRaw+highCN+MethRaw.py"
 
 # train an elasticnet model using KRAS;NRAS;BRAF
-# as distinct binary features w/t combining into 
+# as distinct binary features w/t combining into
 # a triple neg feature
 rule train_KNBrasElasticnet:
     input:
@@ -748,8 +778,8 @@ rule train_KNBrasElasticnet:
         response = ancient(
             "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv")
     output:
-        X_train="KNBrasElasticnet{suffix}_Xtrain.tsv",
-        X_test="KNBrasElasticnet{suffix}_Xtest.tsv",
+        X_train = "KNBrasElasticnet{suffix}_Xtrain.tsv",
+        X_test = "KNBrasElasticnet{suffix}_Xtest.tsv",
         best_model = protected(
             "OmicsBinary_KNBrasElasticnet_mutRaw{suffix}.pkl")
     params:
@@ -896,7 +926,7 @@ rule vis_stackedUpDownSampled_performance:
         target_col = "Cetuximab_Standard_3wks_cat",
         model_name = 'StackingCVClassifier',
         upsampling_pct = upsampling_pct,
-        downsampling_pct = downsampling_pct 
+        downsampling_pct = downsampling_pct
     script:
         "../../local/src/5_McNemar_PDX_30x/UpDowSampledPDX_aggregate_AUC+confMatrix.py"
 
@@ -915,7 +945,7 @@ rule vis_stacked_performance:
             suffix=split_indeces)),
         KNBrasElasticnet = ancient(expand(
             "OmicsBinary_KNBrasElasticnet_mutRaw{suffix}.pkl",
-            suffix=split_indeces)), 
+            suffix=split_indeces)),
         DIABLOsPLSDA_pred = ancient(expand(
             "PDx_IntegratedTunedDIABLO_testPred"+"{suffix}"+".tsv", suffix=split_indeces)),
         tripleNegResample_stacked = ancient(expand(
@@ -932,7 +962,7 @@ rule vis_stacked_performance:
             suffix=split_indeces),
         X_KNBras = expand(
             "KNBrasElasticnet{suffix}_Xtest.tsv",
-        suffix=split_indeces),
+            suffix=split_indeces),
         Y = expand("OmicsBinary{suffix}_Ytest.tsv",
                    suffix=split_indeces)
     output:
