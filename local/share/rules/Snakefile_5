@@ -76,8 +76,9 @@ rule CR_response_pre:
 
 # copy number data preprocessing, feature engineering
 # these gain/loss thresholds are fairly conservative for PDXs (low impurity)
-# for high gain: ~.5 = 1 copy gain, ~1 = 2 copy gain
-# this outputs ~600 features which are then clustered (WardAgg) in the training pipeline
+# this outputs ~600 highly colinear (genes on same seg)
+# features which are then clustered (WardAgg) in
+# the training pipeline
 rule CN_FeatPreproc:
     input:
         response = "DrugResponse_LMXfirslevel_trainTest0.tsv",
@@ -95,6 +96,30 @@ rule CN_FeatPreproc:
         high_gain_thr = .75
     script:
         srcdir+"/2c_PDx_CN_GeneWise_CNVkitREDO_highCN_agglomeration.py"
+
+# preprocessing on Charles River copy number data
+# using the same log2R thresholds as in PDX data, outputs
+# the same feature set
+rule CR_CN_FeatPreproc:
+    input:
+        CR_response = rules.CR_response_pre.output.CR_response,
+        CR_idTab = datadir + "/CharlesRiver/Charles_River_decode.txt",
+        PDX_cnv_pre = "preproc_CNV.tsv",
+        TCGA_CNV = datadir + \
+            "/TCGA_COADREAD_02092020_maskedCNS_intogen_admire-gistic_genewise_CNV_mapToGene.tsv",
+        CR_cnv = datadir + "/CharlesRiver/PDX_74_CNVkit_CharlesRiver_sangerID.tsv",
+    output:
+        preproc_CNV = "CR_preproc_CNV.tsv"
+    params:
+        strict_TCGA_filter = False,
+        PDX_target_col = "Cetuximab_Standard_3wks_cat",
+        CR_target_col = "IC50_byMedian_cat",
+        loss_thr = -.2,
+        gain_thr = .1,
+        high_gain_thr = .75
+    script:
+        srcdir+"/CR_highCN_agglomeration.py"
+
 
 # Cell Model Passport CRC lines copy number data preprocessing, feature engineering
 rule CMP_CNFeatPreproc:
@@ -451,7 +476,7 @@ rule CR_meth_FeatPreproc:
     run:
         import pandas as pd
         import numpy as np
-            
+
         f = input.PDX_preproc_meth
         PDX_preproc_meth = pd.read_csv(f, sep='\t').\
             set_index("ircc_id")
@@ -460,14 +485,15 @@ rule CR_meth_FeatPreproc:
         f = input.CR_response
         CR_response = pd.read_csv(f, sep='\t').\
             set_index('short_CR_id')
-        zero_arr = np.zeros((len(CR_response), 
-            len(meth_features)), dtype=int)
-        CR_preproc_meth = pd.DataFrame(zero_arr, 
-            columns=meth_features,
-            index=CR_response.index)
-        CR_preproc_meth.to_csv(output.CR_preproc_meth, sep='\t') 
+        zero_arr = np.zeros((len(CR_response),
+                             len(meth_features)), dtype=int)
+        CR_preproc_meth = pd.DataFrame(zero_arr,
+                                       columns=meth_features,
+                                       index=CR_response.index)
+        CR_preproc_meth.to_csv(output.CR_preproc_meth, sep='\t')
 
 # clean, preprocess on clinical data (origin patient)
+# these include primary grade, size, patient demographics, treatment history
 rule clin_FeatPreproc:
     input:
         response = "DrugResponse_LMXfirslevel_trainTest"+"{suffix}"+".tsv",
