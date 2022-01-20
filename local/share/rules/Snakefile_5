@@ -506,6 +506,35 @@ rule clin_FeatPreproc:
     script:
         srcdir+"/2a_clinical_data.py"
 
+# preprocess hand-curated subset of PDX clinical
+# data from Charles River models
+# these include some treatment annotations, age, gender
+rule CR_clin_FeatPreproc:
+    input:
+        CR_handTransform = datadir + "/CharlesRiver/CR_meta_handTransform.csv",
+        PDX_preproc_clin = "preproc_clin"+"{suffix}"+".tsv"
+    output:
+        preproc_clin = "CR_preproc_clin"+"{suffix}"+".tsv"
+    params:
+        target_col = "Cetuximab_Standard_3wks_cat"
+    run:
+        import pandas as pd
+        import numpy as np
+
+        f = input.CR_handTransform
+        CR_handTransform = pd.read_csv(f)
+        f = input.PDX_preproc_clin
+        PDX_clin = pd.read_csv(f, sep='\t').set_index('ircc_id')
+        CR_features = CR_handTransform.columns
+        PDX_features = PDX_clin.columns
+        features_toadd = [c for c in PDX_features if c not in CR_features]
+        CR_handTransform[features_toadd] = np.zeros((
+            len(CR_handTransform),
+            len(features_toadd)))
+        CR_handTransform.to_csv(output.preproc_clin,
+                                sep='\t')
+
+
 # stacked model training on the engineered PDX feature dataset
 # [mutation, CNV, methylation, expression, clinical]
 rule train_stacked:
@@ -532,6 +561,28 @@ rule train_stacked:
         "stacked_bestModelSummary{suffix}.log"
     script:
         srcdir + "/OMICS_stacking_binary_clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster.py"
+
+# prepare the Charles river test dataset
+# for the stacked model
+rule CR_test_pre:
+    input:
+        mut = "CR_preproc_mut" + "{suffix}" + ".tsv",
+        cnv = "CR_preproc_CNV.tsv",
+        expr = "CR_preproc_expr"+"{suffix}"+".tsv",
+        meth = "CR_preproc_meth"+"{suffix}"+".tsv",
+        clin = "CR_preproc_clin"+"{suffix}"+".tsv",
+        response = rules.CR_response_pre.output.CR_response,
+        PDX_X_test = "mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv"
+    output:
+        X_test = "CR_mutCross+clin+exprPROGENyHALLMARKS+highCNagg+MethK5cluster{suffix}_Xtest.tsv",
+        Y_test = "CR_OmicsBinary{suffix}_Ytest.tsv"
+    params:
+        target_col = "cetuxi_recist"
+    threads: 4
+    log:
+        "CR_stacked_input{suffix}.log"
+    script:
+        srcdir + "/CR_test_pre.py"
 
 rule eng_UpSample_train:
     input:
