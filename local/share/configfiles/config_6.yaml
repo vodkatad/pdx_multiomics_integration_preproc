@@ -1,0 +1,15 @@
+BIOINFO_ROOT: "../../../../"
+PRJ_ROOT: "../../../../prj/PDx_OmicsIntegration"
+VERSION: "6"
+DATA_DIR: "/local/share/data"
+SRC: "../../local/src/6_tuning"
+TEST_SIZE: .3
+TARGET_COL: "Cetuximab Standard 3wks"
+FULL_CLASS_LABELS:
+  ["Objective Response or Stable Disease", "Progressive Disease (>35%)"]
+CLASS_LABELS: ["OR+SD", "PD"]
+CLASS_BINS: [35]
+N_SPLITS: 30
+DIABLO_MINFEATURES: 5
+DIABLO_MAXFEATURES: 15
+DIABLO_STEP: 5
