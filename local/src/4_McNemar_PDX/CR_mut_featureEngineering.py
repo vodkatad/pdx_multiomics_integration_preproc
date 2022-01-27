@@ -13,8 +13,8 @@ CR_target_col = snakemake.params.CR_target_col
 f = snakemake.input.CR_idTab
 CR_idTab = pd.read_csv(f, sep="\t", header=0)
 # format CR id as in mut table
-CR_idTab["short_CR_id"] =CR_idTab.sample_ID_in_COSMIC.\
-	str.split("_").apply(lambda x:"_".join(x[:3]))
+CR_idTab["short_CR_id"] = CR_idTab.sample_ID_in_COSMIC.\
+    str.split("_").apply(lambda x: "_".join(x[:3]))
 # load CR Cetuximab response
 f = snakemake.input.CR_meta
 CR_meta = pd.read_csv(f, sep="\t", header=0)
@@ -22,10 +22,10 @@ CR_meta = pd.read_csv(f, sep="\t", header=0)
 # add CR ids to CR Cetuximab response
 # via Sanger Ids
 CR_response = pd.merge(
-	CR_idTab,
-	CR_meta,
-	left_on="short_CR_id",
-	right_on="id")
+    CR_idTab,
+    CR_meta,
+    left_on="short_CR_id",
+    right_on="id")
 
 # load CR SNP calls,
 # merge SNPs, drug response using Sanger ids
@@ -55,7 +55,7 @@ PDX_drug_response_data = pd.read_csv(
     snakemake.input.PDX_response, sep="\t")
 # use only PDX train models
 train_models = PDX_drug_response_data[
-	PDX_drug_response_data.is_test==False].ircc_id.tolist()
+    PDX_drug_response_data.is_test == False].ircc_id.tolist()
 # load driver annotation for PDx models
 f = snakemake.input.PDX_mut
 driver_data = pd.read_csv(f, "\t", header=0).rename(columns={'Sample':
@@ -74,6 +74,8 @@ PDX_features_in = pd.get_dummies(PDX_features_pre.Gene)
 PDX_features_in["ircc_id"] = PDX_features_pre.ircc_id
 # account for multiple mut in same sample
 PDX_features_in = PDX_features_in.groupby("ircc_id").sum()
+PDX_features_in = PDX_features_in.where(
+    PDX_features_in > 0, other=1)
 PDX_features = PDX_features_in.columns.tolist()
 # keep only training set models
 train_models = [m for m in train_models if m in PDX_features_in.index]
@@ -118,24 +120,17 @@ all_df.index = train_models + test_models
 feature_col = all_df.columns.tolist()
 all_df = all_df.fillna(0)
 
-# fit scaler, scale independently
 y_train = y_train.loc[train_models]
 y_test = y_test.loc[test_models]
 X_train = all_df.loc[train_models, feature_col]
 X_test = all_df.loc[test_models, feature_col]
-X_train = pd.DataFrame(MinMaxScaler().fit_transform(X_train.values),
-                       columns=X_train.columns,
-                       index=X_train.index)
-X_test = pd.DataFrame(MinMaxScaler().fit_transform(X_test.values),
-                      columns=X_test.columns,
-                      index=X_test.index)
 all_df_scaled = pd.concat([X_train, X_test])
 
 # load pre-computed PDX features
 # only select features that have been selected there
 f = snakemake.input.PDX_preproc_mut
 PDX_preproc_mut = pd.read_csv(f, sep='\t').\
-	set_index('ircc_id')
+    set_index('ircc_id')
 features_tokeep = PDX_preproc_mut.columns
 
 
@@ -204,23 +199,59 @@ for trio in interactions3:
     all_df_new[k] = v
     new_features.append(k)
 
-# add MultiMut features 
+# add MultiMut features
 # aka are there multiple muts on this gene in this sample?
 new_features.extend(multiple_mut.columns)
 all_df_new = pd.merge(all_df_new, multiple_mut,
-                    left_index=True,
-                    right_index=True,
-                    how="left")
-all_df_new = all_df_new.fillna(0)
-# rescale all new features
-all_df_new_scaled = pd.DataFrame(MinMaxScaler().fit_transform(all_df_new.values),
-                            columns=all_df_new.columns,
-                            index=all_df_new.index)
+                      left_index=True,
+                      right_index=True,
+                      how="left")
+all_df_new_scaled = all_df_new.fillna(0)
+# rescale all non-binary new features
+nonbin_features = [c for c in all_df_new if all_df_new[c].nunique() > 2]
+all_df_new_scaled[nonbin_features] = MinMaxScaler().fit_transform(
+    all_df_new[nonbin_features].values)
+
+# build a new training, test dataset including all new features
+X_train_new = all_df_new_scaled.loc[train_models, feature_col + new_features]
+X_test_new = all_df_new_scaled.loc[test_models, feature_col + new_features]
+chi2_stat, pval = [pd.Series(arr) for arr in chi2(X_train_new.values, y_train)]
+chi2_df = pd.concat([chi2_stat, pval], axis=1)
+chi2_df.index = X_train_new.columns
+chi2_df.columns = ['chi2_stat', 'Pval']
+chi2_df['Padj'] = chi2_df.Pval + len(chi2_df)
+chi2_df = chi2_df.sort_values('chi2_stat', ascending=False)
+
+# since there are multiple crosses containing each gene name,
+# pick the best 3x and 2x cross involving said gene
+features_tokeep = feature_col
+chi2_new_df = chi2_df.copy()
+for gene in reversed(top_features.tolist()):  # inverse rank by chi2
+    # pick the best (chi2) feature duo involving gene
+    gene_duos = chi2_new_df[(chi2_new_df.index.str.contains(gene)) &
+                            (chi2_new_df.index.str.contains('_double_'))]
+    try:
+        best_duo = gene_duos.index[0]
+    except IndexError:
+        continue
+    duos_todrop = gene_duos.index[1:].tolist()  # drop the others
+    # pick best trio involving gene
+    gene_trios = chi2_new_df[(chi2_new_df.index.str.contains(gene)) &
+                             (chi2_new_df.index.str.contains('_triple_'))]
+    try:
+        best_trio = gene_trios.index[0]
+    except IndexError:
+        continue
+    trios_todrop = gene_trios.index[1:].tolist()
+    # drop unselected features
+    chi2_new_df = chi2_new_df.drop(duos_todrop + trios_todrop)
+features_tokeep = chi2_new_df.index.tolist()
 
 # these should be a subset of the features generated here since both
 # sets are engineered from the same PDX train set replicate
 features_toadd = [f for f in features_tokeep if f not in all_df_new_scaled]
-all_df_new_scaled[features_toadd] = np.zeros((len(all_df_new_scaled), len(features_toadd)))
-f = snakemake.output.preproc_mut 
+all_df_new_scaled[features_toadd] = np.zeros(
+    (len(all_df_new_scaled), len(features_toadd)))
+f = snakemake.output.preproc_mut
 all_df_new_scaled[features_tokeep].\
-	fillna(0).to_csv(f, sep='\t')
+    fillna(0).to_csv(f, sep='\t')

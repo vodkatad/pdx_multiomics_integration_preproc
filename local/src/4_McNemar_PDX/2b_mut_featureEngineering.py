@@ -31,11 +31,14 @@ driver_data = pd.read_csv(f,
 drug_mut_df = pd.merge(drug_response_data, driver_data,
                        on="sanger_id", how="left")
 # transform df to have a gene x sample binary mutation matrix
-# including all driver genes
-features_pre = drug_mut_df[drug_mut_df["Final_Driver_Annotation"] == True][
-    ["ircc_id",
-     "Gene"]
-].drop_duplicates()
+if snakemake.params.driver_filter:
+    # including only known cancer driver genes
+    features_pre = drug_mut_df[drug_mut_df["Final_Driver_Annotation"] == True]
+else:
+    # include all genes in targeted seq panel
+    features_pre = drug_mut_df.copy()
+features_pre = features_pre[["ircc_id",
+                             "Gene"]].drop_duplicates()
 
 # Feature preprocessing
 
@@ -64,7 +67,7 @@ all_df = all_df[~all_df.index.duplicated(keep='first')]
 # save 'raw' features aka no feature crosses
 if snakemake.params.raw:
     all_df[feature_col].to_csv(snakemake.output.raw_mut,
-                                   sep='\t')
+                               sep='\t')
     sys.exit()
 
 # train-test split
@@ -146,6 +149,10 @@ all_df_new = pd.merge(all_df_new, multiple_mut,
                       right_index=True,
                       how="left")
 all_df_new = all_df_new.fillna(0)
+# rescale all non-binary new features
+nonbin_features = [c for c in all_df_new if all_df_new[c].nunique() > 2]
+all_df_new[nonbin_features] = MinMaxScaler().fit_transform(
+    all_df_new[nonbin_features].values)
 
 # compute chi2 (on binary labels) for all new features
 # chi2 stat is computed exclusively on the trainig set to prevent leakage
@@ -156,6 +163,7 @@ chi2_df = pd.concat([chi2_stat, pval], axis=1)
 chi2_df.index = X_train_new.columns
 chi2_df.columns = ['chi2_stat', 'Pval']
 chi2_df = chi2_df.sort_values('chi2_stat', ascending=False)
+
 
 # filter new features by chi2 stat
 features_tokeep = feature_col.tolist()
@@ -172,8 +180,8 @@ for gene in reversed(top_features.tolist()):  # inverse rank by chi2
     # pick best trio (aka triple positive or triple negative feature combo) involving gene
     gene_trios = chi2_new_df[(chi2_new_df.index.str.contains(gene)) & (
         chi2_new_df.index.str.contains('_triple_'))]
-    # check if there's any remaining trios involving gene 
-    if len(gene_trios) >0:
+    # check if there's any remaining trios involving gene
+    if len(gene_trios) > 0:
         best_trio = gene_trios.index[0]
         trios_todrop = gene_trios.index[1:].tolist()
         # dropa all other trios
