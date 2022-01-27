@@ -99,15 +99,15 @@ all_df = pd.merge(df2, df1, right_index=True, left_index=True, how="outer")
 all_df = pd.merge(all_df, Clin, right_index=True, left_index=True, how="outer")
 
 feature_col = all_df.columns.tolist()
+nonbin_features = [c for c in all_df if all_df[c].nunique() > 2]
 all_df = pd.merge(all_df, Y[target_col],
                   right_index=True, left_index=True, how="right")
 # drop duplicated instances (ircc_id) from index
 all_df = all_df[~all_df.index.duplicated(keep='first')]
 # fill sparse features with median imputation
-all_df[feature_col] = all_df[feature_col].    astype(
-    float).apply(lambda col: col.fillna(col.median()))
+all_df[feature_col] = all_df.fillna(0)
 # force to numeric
-all_df = all_df.select_dtypes([np.number])
+#all_df = all_df.select_dtypes([np.number])
 # train-test split
 train_models = Y[Y.is_test == False].index.unique()
 test_models = Y[Y.is_test == True].index.unique()
@@ -117,10 +117,9 @@ X_test = all_df.loc[test_models, feature_col]
 y_test = all_df.loc[test_models, target_col]
 # scale features separately
 scaler = MinMaxScaler().fit(X_train)
-X_train = pd.DataFrame(scaler.transform(X_train.values),
-                       columns=X_train.columns, index=X_train.index)
-X_test = pd.DataFrame(scaler.transform(X_test.values),
-                      columns=X_test.columns, index=X_test.index)
+X_train[nonbin_features] = scaler.transform(X_train[nonbin_features].values)
+scaler = MinMaxScaler().fit(X_test)
+X_test[nonbin_features] = scaler.transform(X_test[nonbin_features].values)
 # log train, test shape, dataset balance
 logfile = 'stacked_input.log'
 with open(logfile, "w") as log:
@@ -155,6 +154,12 @@ with open(logfile, "a") as log:
     log.write(f"There are {CNV.shape[1]} copy number features." + '\n')
     log.write(f"There are {Clin.shape[1]} clinical features." + '\n')
 
+# save train, test to file
+X_test.to_csv(output.X_test, sep='\t')
+X_train.to_csv(output.X_train, sep='\t')
+y_test.to_csv(output.Y_test, sep='\t')
+y_train.to_csv(output.Y_train, sep='\t')
+
 
 def calc_variance(X, Y):
     return pd.DataFrame(X).var()
@@ -166,18 +171,18 @@ fitted_models = []
 
 def objective(trial):
     # parameters to optimize
-    # trial.suggest_int("Meth_KNNlassifier__n_neighbors", 5, 20, step=5)
-    Meth_KNNlassifier__n_neighbors = 12
-    # trial.suggest_int("Expr__chi2filterFscore__k", 14, 24)
-    Expr__chi2filterFscore__k = 15
-    # trial.suggest_int("Mut__chi2filterFscore__k", 2, 8, step=2)
-    Mut__chi2filterFscore__k = 5
+    Meth_KNNlassifier__n_neighbors = trial.suggest_int(
+        "Meth_KNNlassifier__n_neighbors", 5, 25)
+    Expr__chi2filterFscore__k = trial.suggest_int(
+        "Expr__chi2filterFscore__k", 14, 24)
+    Mut__chi2filterFscore__k = trial.suggest_int(
+        "Mut__chi2filterFscore__k", 2, 10)
     # trial.suggest_int("CNV__WardAgg__n_clusters", 55, 85, step=5)
     CNV__WardAgg__n_clusters = 75
-    # trial.suggest_int("CNV__chi2filterFscore__k", 25, 45, step=5)
-    CNV__chi2filterFscore__k = 25
-    # trial.suggest_int("Clin__chi2filterFscore__k", 4, 12, step=2)
-    Clin__chi2filterFscore__k = 10
+    CNV__chi2filterFscore__k = trial.suggest_int(
+        "CNV__chi2filterFscore__k", 20, 45, )
+    Clin__chi2filterFscore__k = trial.suggest_int(
+        "Clin__chi2filterFscore__k", 4, 12)
     meta__l1R = trial.suggest_loguniform("meta__C", 0.01, 1)
     #meta__penalty = trial.suggest_categorical("meta__penalty", ['l1', 'l2'])
     #trial.suggest_categorical("meta__use_probas", [True, False])
@@ -285,10 +290,15 @@ CS_study = optuna.create_study(
     pruner=optuna.pruners.HyperbandPruner(max_resource="auto")
 )
 
-CS_study.optimize(objective, n_trials=50, n_jobs=snakemake.threads)
+CS_study.optimize(objective, n_trials=snakemake.threads,
+                  n_jobs=snakemake.threads)
 
 
 # pickle best model from trials
+best_model_df = pd.DataFrame(fitted_models,
+                             columns=['test_auc', 'train_auc', 'fitted_model_obj']).\
+    sort_values('train_auc', ascending=False)
+best_model = best_model_df.iloc[0].fitted_model_obj
 model_filename = snakemake.output.best_model
 with open(model_filename, 'wb') as f:
     pickle.dump(best_model, f)
