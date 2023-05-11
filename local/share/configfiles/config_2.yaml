@@ -1,5 +1,5 @@
-BIOINFO_ROOT: "/home/umberto.perron/snaketree"
-PRJ_ROOT: "/home/umberto.perron/snaketree/prj/PDx_OmicsIntegration"
+BIOINFO_ROOT: "/mnt/trcanmed/snaketree/"
+PRJ_ROOT: "/mnt/trcanmed/snaketree/prj/pdx_multiomics_integration_preproc"
 VERSION: "1"
 DATA_DIR: "/local/share/data"
 SRC: "../../local/src"

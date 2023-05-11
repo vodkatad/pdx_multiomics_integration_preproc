@@ -11,7 +11,7 @@ srcdir = config["SRC"]
 rule trainTest_split:
     input:
         ids = datadir+"/mapping_sanger_ID_genealogy_long.tsv",
-        drug = datadir + "/drug_response/Treatments_Eugy_Ele_fix0cetuxi_201005.tsv"
+        drug = datadir + "/Treatments_Eugy_Ele_fix0cetuxi_201005.tsv"
     output:
         response_tab = "DrugResponse_LMXfirslevel_trainTest.tsv"
     params:
@@ -29,7 +29,7 @@ rule CN_FeatClean:
     input:
         response = rules.trainTest_split.output.response_tab,
         cnv = datadir + "/CNA_annotation/our_cn_genes2_CNVkitREDO_25012021.tsv",
-        targeted = datadir + "/targeted_intogen_common_geneset.tsv",
+        targeted = datadir + "/origdata/targeted_intogen_common_geneset.tsv",
         TCGA_CNV = datadir + "/TCGA_COADREAD_02092020_maskedCNS_intogen_admire-gistic_genewise_CNV_mapToGene.tsv"
     output:
         Xtrain = "PDx_CNV_FeatSelect_Xtrain.tsv",
@@ -90,7 +90,7 @@ rule mutVAF_FeatClean:
 rule expr_FeatCleanSelect:
     input:
         response = rules.trainTest_split.output.response_tab,
-        expr = datadir+"/RNAseq/release_2/selected_matrix.tsv"
+        expr = datadir+"/origdata/RNAseq/release_2/selected_matrix.tsv"
     output:
         Xtrain = "PDx_expr_FeatSelect_Xtrain.tsv",
         Xtest = "PDx_expr_FeatSelect_Xtest.tsv",
@@ -111,9 +111,9 @@ rule expr_FeatCleanSelect:
 rule meth_FeatCleanSelect:
     input:
         response = rules.trainTest_split.output.response_tab,
-        meth_m = datadir + "/methylation/m_values_Umberto.hdf5",
-        meth_B_DTpval = datadir + "/methylation/beta_DT-pvalue_Xeno.tsv",
-        meth_m_sd = datadir + "/methylation/m_sdvalue.tsv"
+        meth_m = datadir + "/origdata/methylation/m_values_Umberto.hdf5",
+        meth_B_DTpval = datadir + "/origdata/methylation/beta_DT-pvalue_Xeno.tsv",
+        meth_m_sd = datadir + "/origdata/methylation/m_sdvalue.tsv"
     output:
         Xtrain = "PDx_meth_FeatSelect_Xtrain.tsv",
         Xtest = "PDx_meth_FeatSelect_Xtest.tsv",
@@ -177,6 +177,7 @@ rule MultiFeatSelect_post_test:
     script:
         srcdir+"/3_MultiFeatSelect_post_test.py"
 
+## From now on skip right now
 rule train_DIABLO:
     input:
         mutVAF_Xtrain  = rules.MultiFeatSelect_post_train.output.mutVAF_Xtrain,

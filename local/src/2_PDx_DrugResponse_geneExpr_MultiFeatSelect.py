@@ -51,11 +51,14 @@ drug_response_data = pd.read_csv(snakemake.input.response,
 # these are variance stabilized (vsd)
 rnaseq_matrix = pd.read_csv(snakemake.input.expr,
                             sep="\t", header=0, index_col=0)
+# index is transformed to 1..nrow while ircc_id is a new column with
+# our long genealogy.
 rnaseq_matrix = rnaseq_matrix.T.reset_index().rename(
     columns={'index': 'ircc_id'})
 rnaseq_matrix["ircc_id_short"] = rnaseq_matrix.ircc_id.apply(lambda x: x[0:7])
 rnaseq_matrix = rnaseq_matrix.drop("ircc_id", axis=1)
 
+# XXX warning we are merging on smodel (CRC0031) and did not keep only LMX/PRX before
 # merge expression and drug response
 target_col = snakemake.params.target_col
 merge_matrix = pd.merge(rnaseq_matrix,
@@ -71,6 +74,7 @@ merge_matrix = merge_matrix.drop(
     "ircc_id_short", axis=1).set_index("ircc_id").drop_duplicates()
 
 input_matrix = merge_matrix
+# ?? what does it do? Is it related to the underlyining class of index?
 input_matrix.index = input_matrix.index.values
 features_col = np.array([c for c in input_matrix.columns if c != target_col])
 
@@ -79,6 +83,7 @@ TT_df = drug_response_data[drug_response_data.ircc_id.isin(input_matrix.index)][
 train_models = TT_df[TT_df.is_test == False].ircc_id.unique()
 test_models = TT_df[TT_df.is_test == True].ircc_id.unique()
 
+
 # train-test split
 X_train = input_matrix.loc[train_models, features_col]
 y_train = input_matrix.loc[train_models, target_col]
@@ -86,10 +91,15 @@ X_test = input_matrix.loc[test_models, features_col]
 y_test = input_matrix.loc[test_models, target_col]
 
 # standardise features
-X_train = pd.DataFrame(StandardScaler().fit_transform(X_train.values),
+# HP TODO do this normalization on the whole matrix
+# then remove genes with too low (to be defined) variance before going.
+## Here normalizing test on its avg/sd could prove to be suboptimal. Can we do it on the whole dataset then divide?
+st = StandardScaler()
+st = st.fit(X_train.values)
+X_train = pd.DataFrame(st.transform(X_train.values),
                        columns=features_col,
                        index=X_train.index)
-X_test = pd.DataFrame(StandardScaler().fit_transform(X_test.values),
+X_test = pd.DataFrame(st.transform(X_test.values),
                       columns=features_col,
                       index=X_test.index)
 X_train = X_train.values
@@ -105,7 +115,7 @@ Y_test = y_test.values
 #     - tree-based feature selection
 #     - sequential feature selection
 
-# train the feature selector inside a pipeline that tries to maximise
+# train the feature selector inside a pipeline that tries to maximize
 # classification accuracy on the training set
 N = len(features_col)
 Ks = [int(f) for f in [N/1000, N/500, N/200, N/100, N/50]]
@@ -118,12 +128,15 @@ pipe_steps = [
 ]
 hyperparameter_grid = {
     "ANOVAfilter__k": Ks,
-    "lSVCselector__estimator__C": [1, 0.1, 0.5, .05],
+    "lSVCselector__estimator__C": [1, 0.1, 0.5, .05], # C large: narrow margins between the hyperplanes separating the two classes
+                                                      # how lenient we are with wrong classifications
     "pca__n_components": [2],
     "SVCclassifier__kernel": ["linear"],
     "SVCclassifier__C": [1, 0.1, 0.1, 10],
-    "SVCclassifier__gamma": ["auto", 1, 0.1, 0.5, 0.01]
+    #"SVCclassifier__gamma": ["auto", 1, 0.1, 0.5, 0.01] # number of slack variables 
+    
 }
+# XXX does gamma have sense for linear? Probably not.
 pipeline = Pipeline(pipe_steps)
 
 # Set up grid search with 4-fold cross validation
@@ -145,6 +158,7 @@ CVresult_df.to_csv(snakemake.log[0], sep="\t")
 grid_cv_test_score = grid_cv.score(X_test, y_test)
 
 y_classes = input_matrix[target_col].unique().tolist()
+# grid_cv by default store the best hyperparameters and known them + model weigths, and will use
 Y_pred = grid_cv.predict(X_test)
 
 # if multiclass predictor
@@ -155,10 +169,12 @@ else:
     cm = confusion_matrix(Y_test, Y_pred)
     tn, fp, fn, tp = cm.ravel()
 
-accuracy = tp + tn / (tp + fp + fn + tn)
+# TODO Check if ( tp + tn ) is better
+###I corrected the parentheses
+accuracy = (tp + tn) / (tp + fp + fn + tn)
 precision = tp / (tp + fp)
 recall = tp / (tp + fn)
-# harmonic mean of precion and recall
+# harmonic mean of precision and recall
 F1 = 2*(precision * recall) / (precision + recall)
 model_mcc = matthews_corrcoef(y_test, Y_pred)
 
@@ -268,10 +284,11 @@ yl = plt.ylabel("PC_2", fontsize=14)
 n_genes = lsvc_selected.shape[0]
 classifier_params = grid_cv.best_estimator_[3].get_params()
 kernel = classifier_params["kernel"]
-gamma = classifier_params["gamma"]
+#gamma = classifier_params["gamma"]
 C = classifier_params["C"]
 accu = grid_cv_test_score
-st = f"linearSVC n_genes={n_genes}, k={kernel}; γ={gamma}; C={C}; accuracy={accu:.3f} on PDx vsd expression"
+st = f"linearSVC n_genes={n_genes}, k={kernel}; C={C}; accuracy={accu:.3f} on PDx vsd expression"
+#γ={gamma};
 st = fig.suptitle(st, y=.95, fontsize=18)
 fig.tight_layout
 fig.savefig(snakemake.output.boundary_fig,
@@ -315,6 +332,7 @@ X_test = pd.DataFrame(StandardScaler().fit_transform(X_test.values),
 X_train.to_csv(snakemake.output.Xtrain, sep="\t")
 X_test.to_csv(snakemake.output.Xtest, sep="\t")
 
+# TODO check if black lines are the errors
 if len(svm.classes_) > 2:
     # get the feature selector (linear SVC) coeff
     coeff_plot_df = pd.DataFrame(selector.estimator_.coef_.T,
