@@ -151,19 +151,18 @@ else:
     cm = confusion_matrix(Y_test, Y_pred)
     tn, fp, fn, tp = cm.ravel()
 
-accuracy = tp + tn / (tp + fp + fn + tn)
+accuracy = (tp + tn) / (tp + fp + fn + tn)
 precision = tp / (tp + fp)
 recall = tp / (tp + fn)
 # harmonic mean of precion and recall
 F1 = 2*(precision * recall) / (precision + recall)
 model_mcc = matthews_corrcoef(Y_test, Y_pred)
-printout = f"Model: LinearSVC |\
-     n_features: {ANOVA_selected.shape[0]} | \
-     Precision: {precision: .4f} | \
-     Recall: {recall: .4f} | \
-     MCC: {model_mcc: .4f} | \
-     F1: {F1: .4f} | \
-     Accu: {accuracy: .4f}"
+with open(snakemake.log[0], "a") as logfile:
+    printout = f"Model: LinearSVC | n_features: {ANOVA_selected.shape} |\
+         Precision: {precision:.4f} |\
+         Recall: {recall:.4f} | MCC: {model_mcc:.4f} | \
+            F1: {F1:.4f} | Accu: {accuracy:.4f}"
+    logfile.write(printout)
 
 # if multiclass
 if len(svm.classes_) > 2:

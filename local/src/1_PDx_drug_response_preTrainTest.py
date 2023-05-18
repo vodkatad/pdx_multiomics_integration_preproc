@@ -38,7 +38,7 @@ drug_response_data = pd.merge(id_data,
                                   target_col_join, "ircc_id_short"]],
                               on="ircc_id_short")
 # drop mpde;s w/t missing target
-drug_response_data = drug_response_data[~drug_response_data.Cetuximab_Standard_3wks.isna(
+drug_response_data = drug_response_data[~drug_response_data.loc[:,snakemake.params.target_col].isna(
 )]
 
 bins = [np.NINF] + snakemake.params.class_bins + [np.Infinity]

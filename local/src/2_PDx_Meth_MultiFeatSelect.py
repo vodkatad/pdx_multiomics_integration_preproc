@@ -160,7 +160,7 @@ else:
     cm = confusion_matrix(y_test, Y_pred)
     tn, fp, fn, tp = cm.ravel()
 
-accuracy = tp + tn / (tp + fp + fn + tn)
+accuracy = (tp + tn) / (tp + fp + fn + tn)
 precision = tp / (tp + fp)
 recall = tp / (tp + fn)
 # harmonic mean of precion and recall

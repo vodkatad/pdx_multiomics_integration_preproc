@@ -87,13 +87,24 @@ rule mutVAF_FeatClean:
 
 # feature selection on variance stabilised expression data
 # ANOVA fscore filter + linearSVC l1
+
+# RNA seq data frame after calculating the means of the duplicates
+rule expr_nodup:
+    input: 
+        metadata = "/mnt/trcanmed/snaketree/prj/RNASeq_biod_metadata/dataset/july2020_starOK/selected_metadata_annot_final_nolinfo_nooutlier_replisafe",
+        rnaSeq_expr = datadir + "/origdata/RNAseq/release_2/selected_matrix.tsv"
+    output:
+        rnaSeq = "rnaSeq.tsv"
+    script: srcdir + "/rnaSeq_nodup.R"
+
 rule expr_FeatCleanSelect:
     input:
         response = rules.trainTest_split.output.response_tab,
-        expr = datadir+"/origdata/RNAseq/release_2/selected_matrix.tsv"
+        expr = rules.expr_nodup.output.rnaSeq
     output:
         Xtrain = "PDx_expr_FeatSelect_Xtrain.tsv",
         Xtest = "PDx_expr_FeatSelect_Xtest.tsv",
+
         boundary_fig = "PDx_expr_FeatSelect_boundary_scatterplot.pdf",
         featSelect_model = "PDx_expr_FeatSelect_lSVC.pkl",
         loadings_fig = "PDx_expr_FeatSelect_loadings_barplot.pdf"
